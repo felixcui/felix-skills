@@ -10,13 +10,17 @@ description: 获取 AI 领域最新资讯并进行智能分类。用于从微信
 ## 功能特点
 
 - **自动获取**：从配置的 RSS API 获取昨日到今日的 AI 资讯
-- **智能分类**：使用 AI 模型自动将资讯分类到不同类别
+- **智能分类**：使用 AI 模型（GLM-5）自动将资讯分类到不同类别
 - **分类类别**：
-  - AI编程工具及实践（Cursor、Claude Code、Copilot 等）
-  - AI模型与技术（大模型发布、算法创新、多模态等）
-  - AI产品与应用（AI 应用产品、Agent、智能体等）
-  - AI行业动态（融资并购、行业政策、市场趋势等）
-- **过滤机制**：自动过滤指定公众号的内容和非AI相关内容
+  - AI编程工具及实践（Cursor、Claude Code、Copilot、OpenClaw 等）
+  - AI模型与技术（大模型发布、算法创新、多模态、训练推理优化等）
+  - AI产品与应用（AI 应用产品、功能更新、Agent、智能体、SaaS产品等）
+  - AI行业动态及观察（融资并购、行业政策、市场趋势、人事变动、行业观察等）
+  - 其他（AI相关但跨分类或不确定归属的内容）
+- **过滤机制**：
+  - 自动过滤指定公众号的内容
+  - 谨慎过滤非AI相关内容（招聘、活动、时政、汽车、房产、游戏、娱乐、音乐、体育等）
+- **公众号过滤**：可配置需要排除的公众号 ID 列表
 - **多格式输出**：支持纯文本、Markdown 等格式
 - **公众号发布**：支持创建草稿和发布到微信公众号
 
@@ -34,7 +38,7 @@ python3 scripts/fetch_ai_news.py
 bash scripts/send_ai_news.sh
 ```
 
-### 3. 发布资讯到微信公众号（新增）
+### 微信公众号发布（新增）
 
 #### 方式一：创建草稿（推荐先测试）
 
@@ -48,24 +52,21 @@ python3 scripts/publish_to_wechat.py --create-draft
 python3 scripts/publish_to_wechat.py --publish
 ```
 
-#### 方式三：指定天数和封面图
+#### 方式三：指定天数
 
 ```bash
-# 获取最近 3 天的资讯并发布
-python3 scripts/publish_to_wechat.py --days 3 --publish
-
-# 使用自定义封面图
-python3 scripts/publish_to_wechat.py --cover-image /path/to/cover.jpg --publish
-
-# 使用后台已有的封面图 media_id
-python3 scripts/publish_to_wechat.py --thumb-media-id YOUR_MEDIA_ID --publish
+# 获取最近 3 天的资讯并创建草稿
+python3 scripts/publish_to_wechat.py --days 3 --create-draft
 ```
 
-#### 方式四：保存 Markdown 到本地
+#### 方式四：使用自定义封面图（可选）
 
 ```bash
-python3 scripts/publish_to_wechat.py --days 1 --save-md /path/to/ai_news.md
+# 使用后台已有的封面图素材 ID（推荐）
+python3 scripts/publish_to_wechat.py --create-draft --thumb-media-id qxQUqgd9fe1MaWRFFohGgo8SIofgUyArMyHRseRKpcGrV1yW3yBRRjrd_0Kj41uF
 ```
+
+**注意：** 默认使用固定的封面图素材 ID，无需指定封面图路径。
 
 ## 配置说明
 
@@ -138,53 +139,89 @@ WECHAT_APPSECRET=4719e11ebae2e75231484b7a5eb79802
 
 ## 输出示例
 
-### 飞书格式
+### 飞书格式（最新）
 
 ```
 📰 AI 资讯汇总
 
-> 📅 `2026-03-04` - `2026-03-05`
-> 📊 共 **69** 条资讯（已过滤 9 条）
+> 📅 `2026-03-05` - `2026-03-06`
+> 📊 共 **31** 条资讯（已过滤非AI内容）
 
-📌 AI编程工具及实践（5 条）
-• [Cursor 0.45 发布，新增 Agent 模式](https://...)
-• [Claude Code 使用技巧分享](https://...)
+💻 AI编程工具及实践（5 条）
+1. [骚操作来了！Claude编程的42个实战技巧大全](https://...)
+2. [手把手教你用Obsidian + OpenClaw重构AI知识管理体系](https://...)
+3. [tmux，Vibe Coding时代的最佳跨平台终端基建](https://...)
+4. [GitHub崩到忍无可忍，OpenAI决定开发代码托管平台](https://...)
+5. [刚刚，Claude Code 上线语音模式！「用嘴编程」的时代，来了](https://...)
 
-📌 AI模型与技术（4 条）
-• [GPT-5 即将发布，参数规模突破](https://...)
+🧠 AI模型与技术（13 条）
+1. [图灵奖得主Don Knuth发论文致谢Claude](https://...)
+2. [跳过88%专家，保住97%性能！MoE推理的正确玩法| CVPR'26](https://...)
+3. [刚刚，GPT-5.4核心内幕炸裂剧透！或拥有永久记忆，极限推理狂飙](https://...)
+...
 
-📌 AI产品与应用（3 条）
-• [OpenAI 推出新功能](https://...)
+🚀 AI产品与应用（3 条）
+1. [为什么顶尖投行都选择了 Rogo 这个金融 Agent？](https://...)
+2. [智能体工程火爆中美！猎豹CEO亲自开播春节"养龙虾"经历！X疯传：如何成为世界级 Agent 工程师](https://...)
+3. [Skills：从编程工具的配角到Agent研发的核心](https://...)
 
-📌 AI行业动态（3 条）
-• [某 AI 公司完成 B 轮融资](https://...)
+📈 AI行业动态及观察（5 条）
+1. [通过"Session 0"利用多样性打造高影响力团队](https://...)
+2. [刚刚，阿里批准林俊旸辞职：昨天还在挽留，否认停止开源](https://...)
+3. [OpenAI 要上市了](https://...)
+4. [速递｜捏 Ta完成超千万美金PreA+轮融资，定义AI时代世界创作的基础设施](https://...)
+5. [阿里高层紧急回应林俊旸离职：无关任何斗争/MacBook Neo发布，不到4000能拿下/Seedance2.0价格公布：1元1秒](https://...)
+
+📂 其他（5 条）
+1. [AI 眼镜，不该只有一个「大脑」](https://...)
+2. [AI江湖有聚散，千问的路还在向前](https://...)
+3. [2026 年最好的 AI PC，是 Mac](https://...)
+4. [OpenAI发布Symphony：AI时代的敏捷看板](https://...)
+5. [我被大模型这薪资惊到了！](https://...)
+
+---
+✅ AI资讯推送任务已完成 (7:00)
 ```
 
 ### 微信公众号格式
 
-标题：📰 AI 资讯汇总 - 2026年03月05日
+标题：📰 AI 资讯汇总 - 2026年03月06日
 摘要：本期汇总了最新的 AI 相关资讯，涵盖编程工具、模型技术、产品应用和行业动态等内容。
-内容：HTML 格式的公众号文章
+内容：HTML 格式的公众号文章（使用 baoyu-markdown-to-html 转换，支持代码高亮、数学公式等）
 
 ## 技术细节
 
 ### AI 资讯获取和分类
 
 - 使用 `fetch_ai_news.py` 从 RSS API 获取资讯
-- 使用阿里云百炼进行智能分类（通过 OpenClaw 调用）
+- 使用阿里云百炼 GLM-5 模型进行智能分类（通过 OpenClaw 调用）
 - 关键词分类作为后备方案
-- 自动过滤非AI相关内容（音乐、游戏、娱乐等）
+- 自动过滤非AI相关内容（谨慎过滤，包括招聘、活动、时政、汽车、房产、游戏、娱乐等）
 
 ### 微信公众号发布
 
 - 使用 `publish_to_wechat.py` 统一发布流程
-- 依赖 `aicoding-news-weekly/skills/md_to_html.py` 转换 Markdown 为 HTML
+- 使用 `baoyu-markdown-to-html` 转换 Markdown 为 HTML
 - 依赖 `aicoding-news-weekly/skills/wechat_api_client.py` 调用微信 API
 - 支持创建草稿和发布文章两种模式
 
-### 优化说明
+### 分类优化说明
 
-- ✅ 移除非AI相关资讯（音乐、游戏、娱乐等）
-- ✅ 只保留AI相关内容（编程工具、模型技术、产品应用、行业动态）
-- ✅ 使用 aicoding-news-weekly skill 下的成熟工具
-- ✅ 统一配置管理（.env 文件）
+- ✅ 分类名称更新：AI行业动态 → AI行业动态及观察
+- ✅ 增加"其他"分类：收录不确定归属的AI相关内容
+- ✅ 优化分类提示词：增加明确的判断标准和示例
+- ✅ 模型更新：dashscope/qwen-plus → bailian/glm-5
+- ✅ 谨慎过滤非AI内容：避免过度过滤
+- ✅ 修复 open_id 跨应用问题
+- ✅ 使用专业的 Markdown 转 HTML 工具
+
+### 定时任务配置（OpenClaw Cron）
+
+已配置的定时任务（使用 `openclaw cron`）：
+
+| 任务 | 时间 | 频率 | 说明 |
+|------|------|------|------|
+| AI News - Send to Feishu | 每天 7:00 | 每日 | 自动获取并发送 AI 资讯到飞书 |
+| AI News - Publish to WeChat | 每天 7:10 | 每日 | 自动创建草稿到微信公众号 |
+
+任务会自动发送执行完成通知到飞书。
