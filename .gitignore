@@ -40,3 +40,7 @@ package-lock.json
 *.log
 tmp/
 temp/
+
+# ==== Skills 输出目录 ====
+skills/*/output/
+skills/*/output/**
