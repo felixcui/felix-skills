@@ -1,0 +1,9 @@
+{
+  "name": "felix-skills",
+  "description": "Felix 的 AI 技能集合，涵盖资讯获取、内容生成、公众号发布等日常工作效率工具",
+  "version": "1.0.0",
+  "author": {
+    "name": "Felix Cui",
+    "email": "felixcui@163.com"
+  }
+}

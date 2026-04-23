@@ -1,0 +1,29 @@
+{
+  "name": "felix-skills",
+  "owner": {
+    "name": "Felix Cui",
+    "email": "felixcui@163.com"
+  },
+  "metadata": {
+    "description": "Felix 的 AI 技能集合，涵盖资讯获取、内容生成、公众号发布等日常工作效率工具",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "felix-skills",
+      "description": "AI 资讯获取、内容生成、公众号发布等日常工作效率工具集",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/ai-coding-search",
+        "./skills/ai-news-fetcher",
+        "./skills/aicoding-news-weekly",
+        "./skills/news_collect",
+        "./skills/wechat-article-writer",
+        "./skills/wechat-fetch",
+        "./skills/wechat-to-xiaohongshu",
+        "./skills/wechat-url-to-markdown"
+      ]
+    }
+  ]
+}

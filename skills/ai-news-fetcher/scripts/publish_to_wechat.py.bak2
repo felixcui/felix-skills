@@ -1,0 +1,459 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+AI 资讯发布到微信公众号（完整版）
+
+使用 aicoding-news-weekly skill 下的工具：
+1. md_to_html.py - 将 Markdown 转换为微信公众号 HTML
+2. wechat_api_client.py - 创建草稿和发布文章
+
+功能：
+1. 获取 AI 资讯（从 ai-news-fetcher）
+2. 格式化为微信公众号文章格式
+3. 转换 Markdown 为 HTML（使用 md_to_html.py）
+4. 创建草稿并发布到微信公众号
+
+使用：
+    python3 publish_to_wechat.py [--create-draft] [--publish] [--cover-image path/to/image.jpg] [--days 1]
+"""
+
+import argparse
+import sys
+import os
+import subprocess
+from pathlib import Path
+from datetime import datetime
+import re
+
+# 使用 workspace 根目录作为基准
+WORKSPACE_ROOT = Path("/Users/felix/.openclaw/workspace-fs_news_claw")
+_AICODING_SCRIPTS = WORKSPACE_ROOT / "skills" / "aicoding-news-weekly" / "scripts"
+_AICODING_ENV = WORKSPACE_ROOT / "skills" / "aicoding-news-weekly" / ".env"
+
+# 添加 scripts 目录到 Python 路径
+sys.path.insert(0, str(_AICODING_SCRIPTS))
+
+# 加载环境变量
+try:
+    from dotenv import load_dotenv
+    load_dotenv(_AICODING_ENV)
+except ImportError:
+    pass
+
+
+class WeChatNewsPublisher:
+    """微信公众号新闻发布器（使用 aicoding-news-weekly 工具）"""
+    
+    def __init__(self):
+        """初始化发布器"""
+        # 检查 .env 文件
+        if not _AICODING_ENV.exists():
+            raise FileNotFoundError(
+                f".env 文件不存在: {_AICODING_ENV}\n"
+                f"请在 aicoding-news-weekly 目录下创建 .env 文件"
+            )
+        
+        # 读取凭证
+        self.appid = os.getenv('WECHAT_APPID')
+        self.appsecret = os.getenv('WECHAT_APPSECRET')
+        
+        if not self.appid or not self.appsecret:
+            raise ValueError(
+                ".env 文件中缺少 WECHAT_APPID 或 WECHAT_APPSECRET\n"
+                f"请在 {_AICODING_ENV} 中配置这两个参数"
+            )
+        
+        print(f"✅ 微信公众号凭证已加载")
+        print(f"   AppID: {self.appid[:8]}...")
+        
+        # 检查依赖脚本
+        required_scripts = [
+            _AICODING_SCRIPTS / "md_to_html.py",
+            _AICODING_SCRIPTS / "wechat_api_client.py"
+        ]
+        
+        for script in required_scripts:
+            if not script.exists():
+                raise FileNotFoundError(
+                    f"必需的脚本不存在: {script}\n"
+                    f"请确保 aicoding-news-weekly skill 已正确安装"
+                )
+        
+        print(f"✅ 依赖脚本检查通过")
+    
+    def get_ai_news_markdown(self, days: int = 1) -> str:
+        """
+        获取 AI 资讯并格式化为 Markdown
+        
+        Args:
+            days: 获取最近几天的资讯
+        
+        Returns:
+            Markdown 格式的文章内容
+        """
+        print(f"📰 正在获取最近 {days} 天的 AI 资讯...")
+        
+        # 调用 fetch_ai_news.py 获取资讯
+        fetch_script = WORKSPACE_ROOT / "skills" / "ai-news-fetcher" / "scripts" / "fetch_ai_news.py"
+        
+        if not fetch_script.exists():
+            raise FileNotFoundError(
+                f"fetch_ai_news.py 不存在: {fetch_script}\n"
+                f"请确保 ai-news-fetcher skill 已正确安装"
+            )
+        
+        try:
+            result = subprocess.run(
+                [sys.executable, str(fetch_script)],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"获取资讯失败: {result.stderr}\n"
+                    f"请检查网络连接和 API 配置"
+                )
+            
+            # 解析输出，提取资讯列表
+            lines = result.stdout.strip().split('\n')
+            
+            # 提取资讯列表（简单解析）
+            news_list = []
+            current_item = None
+            
+            for line in lines:
+                # 解析 "N. [标题](链接)" 格式
+                match = re.match(r'^(\d+)\.\s+\[([^\]]+)\]\(([^)]+)\)', line)
+                if match:
+                    if current_item:
+                        news_list.append(current_item)
+                    current_item = {
+                        'title': match.group(2).strip(),
+                        'link': match.group(3).strip()
+                    }
+            
+            if current_item:
+                news_list.append(current_item)
+            
+            if not news_list:
+                return "# 😊 暂无 AI 相关资讯\n\n今天没有新的 AI 相关资讯，请稍后再来查看～"
+            
+            print(f"✅ 成功获取 {len(news_list)} 条资讯")
+            return self._format_to_markdown(news_list, days)
+            
+        except Exception as e:
+            raise RuntimeError(f"获取资讯失败: {e}")
+    
+    def _format_to_markdown(self, news_list: list, days: int) -> str:
+        """
+        将资讯列表格式化为 Markdown
+        
+        Args:
+            news_list: 资讯列表
+            days: 天数
+        
+        Returns:
+            Markdown 内容
+        """
+        today = datetime.now()
+        yesterday = today - __import__('datetime').timedelta(days=days)
+        date_range = f"{yesterday.strftime('%m月%d日')} - {today.strftime('%m月%d日')}"
+        
+        lines = []
+        
+        # 标题
+        lines.append(f"# 📰 AI 资讯汇总（{date_range}）")
+        lines.append("")
+        lines.append(f"以下是近期的 AI 资讯汇总，共 {len(news_list)} 条。")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+        
+        # 资讯列表
+        for i, news in enumerate(news_list, 1):
+            title = news['title']
+            link = news['link']
+            lines.append(f"## {i}. {title}")
+            lines.append("")
+            lines.append(f"📗 [原文链接]({link})")
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+        
+        # 结尾
+        lines.append("## 关于")
+        lines.append("")
+        lines.append("本资讯由 AI 自动汇总生成，涵盖 AI 编程工具、大模型技术、AI 产品应用和行业动态等内容。")
+        lines.append("")
+        lines.append(f"**汇总时间：** {today.strftime('%Y年%m月%d日 %H:%M')}")
+        lines.append(f"**资讯数量：** {len(news_list)} 条")
+        lines.append("")
+        
+        return "\n".join(lines)
+    
+    def convert_to_html(self, markdown_content: str) -> str:
+        """
+        将 Markdown 转换为 HTML（使用 aicoding-news-weekly 的 md_to_html.py）
+        
+        Args:
+            markdown_content: Markdown 内容
+        
+        Returns:
+            HTML 内容
+        """
+        print(f"🔄 正在转换 Markdown 为 HTML...")
+        
+        # 保存 Markdown 到临时文件
+        temp_md = Path("/tmp/ai_news_wechat.md")
+        temp_md.write_text(markdown_content, encoding='utf-8')
+        
+        # 调用 md_to_html.py
+        md_to_html_script = _AICODING_SCRIPTS / "md_to_html.py"
+        
+        try:
+            # 尝试直接导入 md_to_html 模块
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("md_to_html", str(md_to_html_script))
+            md_to_html_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(md_to_html_module)
+            
+            # 调用主函数
+            html_content = md_to_html_module.main([
+                str(temp_md),
+                "--output", "-"  # 输出到 stdout
+            ])
+            
+            # 如果返回的是 None，尝试从文件读取
+            if not html_content:
+                temp_html = Path("/tmp/ai_news_wechat.html")
+                if temp_html.exists():
+                    html_content = temp_html.read_text(encoding='utf-8')
+            
+            print(f"✅ HTML 转换成功，内容长度: {len(html_content) if html_content else 0} 字节")
+            
+            return html_content if html_content else markdown_content
+            
+        except Exception as e:
+            print(f"❌ Markdown 转 HTML 失败: {e}")
+            # 返回包含在基本 HTML 标签中的 Markdown
+            return f"<!DOCTYPE html><html><head><meta charset='UTF-8'><title>AI 资讯汇总</title></head><body>{markdown_content}</body></html>"
+    
+    def create_draft(self, html_content: str, cover_image: str = None, thumb_media_id: str = None) -> str:
+        """
+        创建草稿（使用 aicoding-news-weekly 的 wechat_api_client.py）
+        
+        Args:
+            html_content: HTML 内容
+            cover_image: 封面图片路径
+            thumb_media_id: 封面图片的 media_id（已有）
+        
+        Returns:
+            草稿的 media_id
+        """
+        print(f"📝 正在格式化资讯为公众号文章...")
+        
+        # 生成标题
+        today = datetime.now()
+        date_str = today.strftime('%Y年%m月%d日')
+        
+        title = f"📰 AI 资讯汇总 - {date_str}"
+        author = "AI 资讯助手"
+        
+        # 摘要（文章描述）
+        digest = f"本期汇总了最新的 AI 相关资讯，涵盖编程工具、模型技术、产品应用和行业动态等内容。"
+        
+        # 内容来源 URL（可以为空）
+        content_source_url = ""
+        
+        # 调用 wechat_api_client.py 创建草稿
+        wechat_client_script = _AICODING_SCRIPTS / "wechat_api_client.py"
+        
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("wechat_api_client", str(wechat_client_script))
+            wechat_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(wechat_module)
+            
+            WeChatAPIClient = wechat_module.WeChatAPIClient
+            
+            # 创建客户端实例
+            client = WeChatAPIClient(appid=self.appid, appsecret=self.appsecret)
+            print(f"✅ 微信 API 客户端初始化成功")
+            
+            # 创建草稿
+            try:
+                media_id = client.create_draft(
+                    title=title,
+                    author=author,
+                    digest=digest,
+                    content=html_content,
+                    content_source_url=content_source_url,
+                    cover_image_path=cover_image,
+                    thumb_media_id=thumb_media_id,
+                    need_open_comment=1,
+                    only_fans_can_comment=0
+                )
+                print(f"✅ 草稿创建成功！media_id: {media_id}")
+                return media_id
+                
+            except Exception as e:
+                raise RuntimeError(f"创建草稿失败: {e}")
+            
+        except Exception as e:
+            raise RuntimeError(f"加载 wechat_api_client 失败: {e}")
+    
+    def publish_news(self, media_id: str) -> str:
+        """
+        发布草稿
+        
+        Args:
+            media_id: 草稿的 media_id
+        
+        Returns:
+            发布的文章 ID (publish_id)
+        """
+        print(f"🚀 正在发布文章...")
+        
+        # 调用 wechat_api_client.py 发布草稿
+        wechat_client_script = _AICODING_SCRIPTS / "wechat_api_client.py"
+        
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("wechat_api_client", str(wechat_client_script))
+            wechat_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(wechat_module)
+            
+            WeChatAPIClient = wechat_module.WeChatAPIClient
+            
+            # 创建客户端实例
+            client = WeChatAPIClient(appid=self.appid, appsecret=self.appsecret)
+            
+            # 发布草稿
+            try:
+                publish_id = client.publish_draft(media_id)
+                print(f"✅ 文章发布成功！publish_id: {publish_id}")
+                return publish_id
+                
+            except Exception as e:
+                raise RuntimeError(f"发布文章失败: {e}")
+            
+        except Exception as e:
+            raise RuntimeError(f"加载 wechat_api_client 失败: {e}")
+    
+    def create_and_publish(self, days: int = 1, cover_image: str = None, thumb_media_id: str = None, create_only: bool = False) -> str:
+        """
+        创建并发布资讯
+        
+        Args:
+            days: 获取最近几天的资讯
+            cover_image: 封面图片路径
+            thumb_media_id: 封面图片的 media_id
+            create_only: 是否只创建草稿不发布
+        
+        Returns:
+            草稿或文章的 media_id
+        """
+        print("=" * 50)
+        print(f"📰 开始处理 AI 资讯（最近 {days} 天）")
+        print("=" * 50)
+        
+        # 获取资讯 Markdown
+        markdown_content = self.get_ai_news_markdown(days=days)
+        
+        # 转换为 HTML
+        html_content = self.convert_to_html(markdown_content)
+        
+        # 创建草稿
+        media_id = self.create_draft(html_content, cover_image=cover_image, thumb_media_id=thumb_media_id)
+        
+        if create_only:
+            print("✅ 仅创建草稿模式，不进行发布")
+            return media_id
+        
+        # 发布草稿
+        publish_id = self.publish_news(media_id)
+        
+        print("=" * 50)
+        print(f"✅ 资讯发布成功！")
+        print(f"   草稿 ID: {media_id}")
+        print(f"   文章 ID: {publish_id}")
+        print(f"   请在公众号后台查看: https://mp.weixin.qq.com/")
+        print("=" * 50)
+        
+        return media_id
+
+
+# 默认封面图素材ID
+DEFAULT_THUMB_MEDIA_ID = "qxQUqgd9fe1MaWRFFohGgo8SIofgUyArMyHRseRKpcGrV1yW3yBRRjrd_0Kj41uF"
+
+
+def main():
+    """主函数"""
+    parser = argparse.ArgumentParser(description='发布 AI 资讯到微信公众号（使用 aicoding-news-weekly 工具）')
+    
+    parser.add_argument('--days', type=int, default=1,
+                        help='获取最近几天的资讯（默认1天）')
+    parser.add_argument('--create-draft', action='store_true',
+                        help='只创建草稿，不发布')
+    parser.add_argument('--publish', action='store_true',
+                        help='创建草稿并发布')
+    parser.add_argument('--cover-image', type=str,
+                        help='封面图片路径（本地文件）')
+    parser.add_argument('--thumb-media-id', type=str,
+                        help='封面图片的 media_id（使用后台已有的图片，如不指定则使用默认素材ID）')
+    parser.add_argument('--save-md', type=str,
+                        help='保存 Markdown 到指定文件')
+    
+    args = parser.parse_args()
+    
+    # 创建发布器
+    try:
+        publisher = WeChatNewsPublisher()
+    except Exception as e:
+        print(f"❌ 初始化发布器失败: {e}")
+        print(f"   请检查 aicoding-news-weekly/.env 文件中的 WECHAT_APPID 和 WECHAT_APPSECRET 配置")
+        sys.exit(1)
+    
+    # 处理保存 Markdown
+    if args.save_md:
+        try:
+            markdown_content = publisher.get_ai_news_markdown(days=args.days)
+            output_path = Path(args.save_md)
+            output_path.write_text(markdown_content, encoding='utf-8')
+            print(f"✅ Markdown 已保存到: {output_path}")
+        except Exception as e:
+            print(f"❌ 保存 Markdown 失败: {e}")
+            sys.exit(1)
+    
+    # 创建草稿
+    if args.create_draft or args.publish:
+        cover_image = args.cover_image
+        # 使用默认封面图素材ID（如果未指定）
+        thumb_media_id = args.thumb_media_id if args.thumb_media_id else DEFAULT_THUMB_MEDIA_ID
+        
+        print(f"✅ 使用固定封面图素材ID: {DEFAULT_THUMB_MEDIA_ID}")
+        
+        try:
+            if args.create_draft:
+                publisher.create_and_publish(days=args.days, cover_image=cover_image, thumb_media_id=thumb_media_id, create_only=True)
+            elif args.publish:
+                publisher.create_and_publish(days=args.days, cover_image=cover_image, thumb_media_id=thumb_media_id, create_only=False)
+        except Exception as e:
+            print(f"❌ 发布失败: {e}")
+            sys.exit(1)
+    else:
+        # 默认行为：只创建草稿，使用默认封面图
+        print("⚠️  未指定操作，默认创建草稿（不发布）")
+        print(f"   使用固定封面图素材ID: {DEFAULT_THUMB_MEDIA_ID}")
+        print("   使用 --publish 来创建并发布")
+        try:
+            publisher.create_and_publish(days=args.days, thumb_media_id=DEFAULT_THUMB_MEDIA_ID, create_only=True)
+        except Exception as e:
+            print(f"❌ 创建草稿失败: {e}")
+            sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

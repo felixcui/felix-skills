@@ -3,7 +3,7 @@
 """
 AI 资讯发布到微信公众号（使用 baoyu-markdown-to-html）
 
-直接使用 fetch_ai_news.py 的 get_news_summary 获取 Markdown
+直接使用 fetch_ai_news_v4.py 的 get_news_summary 获取 Markdown
 使用 baoyu-markdown-to-html 转换为 HTML
 
 使用：
@@ -18,7 +18,15 @@ from datetime import datetime
 import subprocess
 
 # 使用 workspace 根目录作为基准
-WORKSPACE_ROOT = Path("/Users/felix/.openclaw/workspace-fs_news_claw")
+# 处理 symlink 情况，先获取脚本的实际路径
+_SCRIPT_REAL_PATH = Path(__file__).resolve()
+# 如果是 symlink，找到实际的 workspace 根目录
+if "/work/media-conent/.claude/skills/" in str(_SCRIPT_REAL_PATH):
+    # 使用硬编码的 workspace 路径
+    WORKSPACE_ROOT = Path("/Users/felix/.openclaw/workspace-fs_news_claw")
+else:
+    WORKSPACE_ROOT = _SCRIPT_REAL_PATH.parents[3]
+
 _AICODING_SCRIPTS = WORKSPACE_ROOT / "skills" / "aicoding-news-weekly" / "scripts"
 _AICODING_ENV = WORKSPACE_ROOT / "skills" / "aicoding-news-weekly" / ".env"
 
@@ -63,7 +71,7 @@ class WeChatNewsPublisher:
     
     def get_ai_news_markdown(self, days: int = 1) -> str:
         """
-        直接使用 fetch_ai_news.py 中的 get_news_summary 获取 Markdown
+        直接使用 fetch_ai_news_v4.py 中的 get_news_summary 获取 Markdown
         
         Args:
             days: 获取最近几天的资讯
@@ -74,33 +82,29 @@ class WeChatNewsPublisher:
         print(f"📰 正在获取最近 {days} 天的 AI 资讯...")
         
         # 导入 fetch_ai_news 模块
-        fetch_script = WORKSPACE_ROOT / "skills" / "ai-news-fetcher" / "scripts" / "fetch_ai_news.py"
+        fetch_script = WORKSPACE_ROOT / "skills" / "ai-news-fetcher" / "scripts" / "fetch_ai_news_v4.py"
         
         if not fetch_script.exists():
             raise FileNotFoundError(
-                f"fetch_ai_news.py 不存在: {fetch_script}\n"
+                f"fetch_ai_news_v4.py 不存在: {fetch_script}\n"
                 f"请确保 ai-news-fetcher skill 已正确安装"
             )
         
         try:
             # 动态导入 fetch_ai_news 模块
             import importlib.util
-            spec = importlib.util.spec_from_file_location("fetch_ai_news", str(fetch_script))
+            spec = importlib.util.spec_from_file_location("fetch_ai_news_v4", str(fetch_script))
             fetch_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(fetch_module)
             
             # 直接调用 get_news_summary 函数
             if hasattr(fetch_module, 'get_news_summary'):
-                markdown_content = fetch_module.get_news_summary(
-                    days=days,
-                    classify=True,
-                    platform="wechat"
-                )
+                markdown_content = fetch_module.get_news_summary(days=days)
                 print(f"✅ 成功获取 Markdown")
                 print(f"   Markdown 长度: {len(markdown_content)} 字节")
                 return markdown_content
             else:
-                raise RuntimeError("fetch_ai_news.py 中缺少 get_news_summary 函数")
+                raise RuntimeError("fetch_ai_news_v4.py 中缺少 get_news_summary 函数")
                 
         except Exception as e:
             raise RuntimeError(f"获取资讯失败: {e}")
@@ -160,6 +164,14 @@ class WeChatNewsPublisher:
             
             # 读取 HTML 内容
             html_content = Path(html_path).read_text(encoding='utf-8')
+            
+            # 提取 body 内的内容（微信只需要 body 部分）
+            import re
+            body_match = re.search(r'<body[^>]*>(.*?)</body>', html_content, re.DOTALL)
+            if body_match:
+                html_content = body_match.group(1)
+                print(f"✅ 已提取 body 内容")
+            
             print(f"✅ HTML 转换成功")
             print(f"   HTML 长度: {len(html_content)} 字节")
             print(f"   HTML 文件: {html_path}")
@@ -180,7 +192,7 @@ class WeChatNewsPublisher:
         today = datetime.now()
         date_str = today.strftime('%Y年%m月%d日')
         
-        title = f"📰 AI 资讯汇总 - {date_str}"
+        title = f"AI 资讯日报-{today.strftime('%Y.%m.%d')}"
         author = "AI 资讯助手"
         digest = f"本期汇总了最新的 AI 相关资讯，涵盖编程工具、模型技术、产品应用和行业动态等内容。"
         content_source_url = ""
@@ -261,6 +273,8 @@ class WeChatNewsPublisher:
         
         if create_only:
             print("✅ 仅创建草稿模式，不进行发布")
+            # 发送完成通知到飞书
+            self.send_completion_notification()
             return media_id
         
         # 发布草稿
@@ -273,10 +287,12 @@ class WeChatNewsPublisher:
         print(f"   请在公众号后台查看: https://mp.weixin.qq.com/")
         print("=" * 50)
         
+        # 发送完成通知到飞书
+        self.send_completion_notification()
+        
         return media_id
 
-
-def send_completion_notification(self):
+    def send_completion_notification(self):
         """发送执行完成通知到飞书"""
         print("📱 发送完成通知到飞书...")
         
@@ -285,8 +301,9 @@ def send_completion_notification(self):
             result = subprocess.run([
                 "/opt/homebrew/bin/openclaw", "message", "send",
                 "--channel", "feishu",
+                "--account", "fs_news_claw",
                 "--target", "ou_5b479a8489e8ebf34df50794d2a2cb0d",
-                "--message", "✅ AI资讯发布到公众号任务已完成 (7:10)"
+                "--message", "✅ AI资讯发布到公众号任务已完成，请在公众号后台查看草稿。"
             ], capture_output=True, text=True, timeout=30)
             
             if result.returncode == 0:
