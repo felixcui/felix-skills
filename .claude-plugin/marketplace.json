@@ -18,7 +18,7 @@
         "./skills/ai-coding-search",
         "./skills/ai-news-fetcher",
         "./skills/aicoding-news-weekly",
-        "./skills/news_collect",
+        "./skills/news-collect",
         "./skills/wechat-article-writer",
         "./skills/wechat-fetch",
         "./skills/wechat-to-xiaohongshu",

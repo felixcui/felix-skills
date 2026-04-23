@@ -172,7 +172,7 @@ python3 scripts/collect_v2.py <URL> --summary-length 150
 等待生成完成（约30秒）...
    下载 report...
    ✅ 下载成功
-✅ 文件已保存到 /tmp/news_collect_output
+✅ 文件已保存到 /tmp/news-collect_output
 
 [5/5] 推送到飞书...
 ✅ 推送成功！
@@ -257,7 +257,7 @@ IMA_API_BASE = "https://ima.qq.com"
 3. **创建 Markdown** - 标准化格式
 4. **上传 NotebookLM** - 自动创建「AI 资讯」笔记本并上传
 5. **生成格式** - 根据参数生成报告/思维导图/PPT/播客/Quiz
-6. **下载文件** - 下载生成的文件到 `/tmp/news_collect_output`
+6. **下载文件** - 下载生成的文件到 `/tmp/news-collect_output`
 7. **推送飞书** - 推送摘要到飞书 webhook
 8. **添加 IMA** - 添加微信文章到 IMA 知识库
 
@@ -272,7 +272,7 @@ IMA_API_BASE = "https://ima.qq.com"
 ## 文件结构
 
 ```
-news_collect/
+news-collect/
 ├── SKILL.md                    # 技能文档
 └── scripts/
     ├── collect_v2.py            # ⭐ V2 主脚本（增强版）
