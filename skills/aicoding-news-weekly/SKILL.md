@@ -13,13 +13,14 @@ description: 生成 AICoding 基地的每周资讯报告，支持公众号预览
 <放置目录>/
 └── aicoding-news-weekly/           # 技能目录（可放置在任意位置）
     ├── SKILL.md                   # 本文档
-    ├── .env                       # 微信公众号凭证（可选）
+    ├── .env.example               # 环境变量模板（复制为 .env 后填入凭证）
+    ├── .env                       # 实际凭证（已加入 .gitignore）
     ├── scripts/                   # 周报生成脚本
     │   ├── generate_weekly.py     # 主脚本：生成周报
     │   ├── feishu_news.py         # 飞书 API 调用
     │   ├── md_to_html.py          # 公众号发布工具
     │   └── wechat_api_client.py   # 微信 API 客户端
-    └── output/                    # 默认输出目录（自动创建，建议加入 .gitignore）
+    └── output/                    # 默认输出目录（自动创建，已加入 .gitignore）
         └── 2026-01-24.md          # 生成的周报文件
 ```
 
@@ -86,30 +87,54 @@ python scripts/generate_weekly.py --weixin
 
 ## 环境配置
 
-### 飞书 API 配置
+### 快速开始
 
-飞书 API 凭证已硬编码在 `scripts/feishu_news.py` 中，无需额外配置。
-
-### 微信公众号 API 配置（可选）
-
-使用 `--weixin` 功能前，在 **skill 目录**（`aicoding-news-weekly/`）下创建 `.env` 文件：
+skill 目录下提供了 `.env.example` 模板，复制并填入实际凭证即可：
 
 ```bash
-# 在 skill 目录下创建 .env
-cat > aicoding-news-weekly/.env << 'EOF'
+cd aicoding-news-weekly
+cp .env.example .env
+# 编辑 .env 填入实际值
+```
+
+### 环境变量说明
+
+所有配置统一在 skill 目录下的 `.env` 文件中管理（已加入 `.gitignore`，不会提交到仓库）：
+
+```bash
+# ---- 飞书 API 凭证（必填） ----
+# 用于调用飞书多维表格 API 获取资讯数据
+# 获取方式：https://open.feishu.cn/app → 创建应用 → 凭证与基础信息
+FEISHU_APP_ID=cli_xxxxxxxxxxxx
+FEISHU_APP_SECRET=xxxxxxxxxxxxxxxx
+
+# ---- 微信公众号 API 凭证（可选，仅 --weixin 模式需要） ----
+# 用于通过 API 创建公众号草稿
+# 获取方式：https://mp.weixin.qq.com/ → 开发 → 基本配置
+# 注意：需要认证的服务号，并在公众号后台设置服务器 IP 白名单
 WECHAT_APPID=你的AppID
 WECHAT_APPSECRET=你的AppSecret
-EOF
 ```
 
-或直接创建 `aicoding-news-weekly/.env` 文件，内容为：
+| 变量名 | 必要性 | 说明 |
+|--------|--------|------|
+| `FEISHU_APP_ID` | **必填** | 飞书应用的 App ID，用于获取多维表格数据 |
+| `FEISHU_APP_SECRET` | **必填** | 飞书应用的 App Secret |
+| `WECHAT_APPID` | 可选 | 微信公众号 AppID，仅 `--weixin` 模式需要 |
+| `WECHAT_APPSECRET` | 可选 | 微信公众号 AppSecret，仅 `--weixin` 模式需要 |
 
-```
-WECHAT_APPID=你的AppID
-WECHAT_APPSECRET=你的AppSecret
-```
+### Python 依赖
 
-在公众号后台设置服务器 IP 白名单。
+```bash
+# 基础依赖（必装）
+pip install requests python-dotenv
+
+# 公众号 HTML 预览/发布功能（--publish / --preview）
+pip install markdown pygments
+
+# 剪贴板复制功能（可选）
+pip install pyperclip
+```
 
 ## 示例
 
@@ -123,7 +148,7 @@ WECHAT_APPSECRET=你的AppSecret
 
 ## 注意事项
 
-- **输出位置**：默认保存到 skill 内部的 `output/` 目录（建议加入 `.gitignore`），可通过 `--output-dir` 或 `--output` 自定义
+- **输出位置**：默认保存到 skill 内部的 `output/` 目录（已加入 `.gitignore`），可通过 `--output-dir` 或 `--output` 自定义
 - 如果周报文件已存在，脚本会自动覆盖旧文件
 - 日期格式必须严格遵循 `YYYY-MM-DD` 格式
 - 确保飞书 API 凭证有效

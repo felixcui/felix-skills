@@ -53,27 +53,6 @@ def check_feishu_config():
   APP_ID=cli_xxxxxxxxxxxx
   APP_SECRET=xxxxxxxxxxxxxxxx""")
 
-class FeishuConfigError(Exception):
-    """飞书凭证配置错误"""
-    pass
-
-def check_feishu_config():
-    """检查飞书凭证是否已配置"""
-    if not FEISHU_CONFIG["APP_ID"] or not FEISHU_CONFIG["APP_SECRET"]:
-        skill_dir = Path(__file__).parent.parent
-        env_path = skill_dir / ".env"
-        raise FeishuConfigError(f"""❌ 飞书 API 凭证未配置！
-
-请提供以下凭证：
-  • FEISHU_APP_ID: 飞书应用的 App ID
-  • FEISHU_APP_SECRET: 飞书应用的 App Secret
-
-凭证将保存到: {env_path}
-
-请回复凭证信息，格式如下：
-  APP_ID=cli_xxxxxxxxxxxx
-  APP_SECRET=xxxxxxxxxxxxxxxx""")
-
 def get_tenant_access_token() -> str:
     """获取飞书访问令牌"""
     check_feishu_config()  # 检查凭证配置
