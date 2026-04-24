@@ -5,9 +5,26 @@ AI 资讯获取与分类脚本（6分类新版）
 """
 import requests
 import json
-import subprocess
 import os
+from pathlib import Path
 from datetime import datetime, timedelta
+from openai import OpenAI
+
+# ========== 加载环境变量 ==========
+SCRIPT_DIR = Path(__file__).resolve().parent
+SKILL_ROOT = SCRIPT_DIR.parent
+ENV_FILE = SKILL_ROOT / ".env"
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ENV_FILE)
+except ImportError:
+    pass
+
+# ========== OpenAI API 配置 ==========
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://dashscope.aliyuncs.com/compatible-mode/v1')
+OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'qwen-plus')
 
 # 需要过滤的公众号ID列表
 EXCLUDED_BIZ_IDS = {
@@ -38,10 +55,14 @@ CATEGORY_ICONS = {
 
 
 def classify_news_with_ai(news_list):
-    """使用阿里云百炼进行智能分类（6分类新版）"""
+    """使用 OpenAI 兼容 API 进行智能分类（6分类新版）"""
     
     if not news_list:
         return {}
+    
+    if not OPENAI_API_KEY or OPENAI_API_KEY == 'your_api_key':
+        print("⚠️ OPENAI_API_KEY 未配置，使用关键词分类")
+        return classify_by_keywords(news_list)
     
     # 将新闻标题拼接成提示
     titles = "\n".join([f"{i+1}. {item['title']}" for i, item in enumerate(news_list)])
@@ -52,64 +73,40 @@ def classify_news_with_ai(news_list):
 1. 所有资讯都与AI/科技相关，请优先归入前6个分类，尽量减少"其他"分类的使用
 2. "其他"仅用于：与AI完全无关的内容、纯招聘信息
 3. 当一条资讯可能属于多个分类时，选择最核心、最突出的那个
+4. 索引从 1 开始，与上面的序号对应
 
 资讯列表：
 {titles}
 
 分类规则（严格使用以下6个分类名称）：
 
-**AI编程与开发** 💻 - 编程工具、软件开发、工程实践
-- 包含：Cursor、Claude Code、GitHub Copilot、OpenClaw、IDE插件
+**AI编程与开发** - 编程工具、软件开发、工程实践
+- 包含：Cursor、Claude Code、GitHub Copilot、IDE插件
 - 包含：Vibe Coding、编程技巧、实战教程、代码生成
 - 包含：软件工程、研发效能、DevOps、CI/CD、架构设计、代码审查
-- 判断标准：开发者工具、编程实践、软件工程改进
 
-**AI模型与技术** 🧠 - 模型发布、技术突破、算法研究
+**AI模型与技术** - 模型发布、技术突破、算法研究
 - 包含：GPT、Claude、Kimi、Qwen、Llama、MiniMax等模型发布/更新
 - 包含：模型架构、训练技术、算法创新、推理优化、微调量化
-- 包含：多模态、Transformer、Benchmark、评测
-- 包含：论文、顶会（CVPR、ICLR、AAAI、NeurIPS等）、研究成果
-- 判断标准：模型技术本身、论文、算法、架构创新
+- 包含：多模态、Transformer、Benchmark、评测、论文、顶会
 
-**AI内容创作** 🎨 - AI生成内容、创意工具、创作应用
+**AI内容创作** - AI生成内容、创意工具、创作应用
 - 包含：AI视频生成、AI绘画、AI写作、AI音乐、AI配音
-- 包含：短剧生成、图像生成、视频剪辑、内容生产工具
-- 包含：创作教程、使用攻略、玩法技巧、案例展示
 - 包含：Seedance、Sora、Midjourney、Stable Diffusion等创作工具
-- 判断标准：内容创作、生成式AI、创意工具、教程攻略
 
-**AI产品与应用** 🚀 - AI产品发布、平台功能、企业服务
+**AI产品与应用** - AI产品发布、平台功能、企业服务
 - 包含：产品发布会、功能更新、平台上线、SaaS服务
-- 包含：Agent平台、智能体、企业级AI服务、产品集成
-- 包含：飞书、钉钉、企业微信等平台的AI功能更新
-- 包含：业务落地、实际应用案例、解决方案
-- 判断标准：产品发布、平台功能、企业服务、业务应用
+- 包含：Agent平台、智能体、企业级AI服务、业务落地
 
-**AI行业动态** 📈 - 商业动态、融资投资、市场竞争
+**AI行业动态** - 商业动态、融资投资、市场竞争
 - 包含：融资、投资、并购、上市、IPO、估值、财报
-- 包含：人事变动（入职、离职、任命）、组织架构调整
-- 包含：公司战略、市场竞争、行业政策、监管动态
-- 包含：大佬动态（黄仁勋、马斯克、李彦宏等）、创业故事
-- 判断标准：商业层面、金额、人事、战略、竞争
+- 包含：人事变动、公司战略、市场竞争、行业政策
 
-**观点与趋势** 💡 - 行业观察、深度分析、未来预测
+**观点与趋势** - 行业观察、深度分析、未来预测
 - 包含：行业观察、趋势分析、深度报道、观点评论
 - 包含：对AI发展的思考、未来预测、影响分析
-- 包含：技术解读、行业报告、市场分析、专家观点
-- 包含：AI对社会/行业/个人的影响讨论
-- 判断标准：观点性、分析性、预测性、深度思考
 
-**其他** 📂 - 仅当与AI完全无关时使用
-- 仅用于：纯招聘信息、与科技无关的内容
-
-【分类示例】
-- "鹅厂员工都Vibe Coding出了什么" → AI编程与开发
-- "MiniMax M2.7重磅发布" → AI模型与技术
-- "小云雀短剧Agent上线" → AI内容创作（视频/短剧生成）
-- "飞书2026春季发布会" → AI产品与应用
-- "858亿砸AI，腾讯杀入AI战争" → AI行业动态
-- "AI都能自己做视频了，我却更想创作" → 观点与趋势
-- "量子位编辑作者招聘" → 其他
+**其他** - 仅当与AI完全无关时使用
 
 请以 JSON 格式输出分类结果，格式如下：
 {{
@@ -125,75 +122,69 @@ def classify_news_with_ai(news_list):
 只输出 JSON，不要输出其他内容。"""
 
     try:
-        # 使用 openclaw 命令行工具调用 AI 模型
-        env = os.environ.copy()
-        env['OPENCLAW_MODEL'] = 'zai/glm-5'
+        print(f"🤖 使用 {OPENAI_MODEL} 进行 AI 分类...")
         
-        cmd = [
-            "openclaw",
-            "agent",
-            "--session-id", "ai-news-classifier",
-            "--json",
-            "--message", prompt
-        ]
+        client = OpenAI(
+            api_key=OPENAI_API_KEY,
+            base_url=OPENAI_BASE_URL,
+        )
         
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120, env=env)
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "你是一个专业的 AI 资讯分类助手，擅长将科技资讯准确归类。只输出 JSON，不要输出其他内容。"},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            response_format={"type": "json_object"},
+        )
         
-        if result.returncode == 0:
-            response_text = result.stdout.decode('utf-8').strip()
-            # --json 模式返回 JSON，提取 payloads[0].text
-            try:
-                outer = json.loads(response_text)
-                inner_text = outer["result"]["payloads"][0]["text"]
-                response_text = inner_text.strip()
-            except (json.JSONDecodeError, KeyError, IndexError):
-                pass  # 非 JSON 包装，继续用原始文本
-            # 提取第一个完整的 JSON 对象
-            start_idx = response_text.find('{')
-            if start_idx == -1:
-                print(f"AI 分类返回无JSON: {response_text[:200]}")
-            else:
-                # 用括号匹配找到第一个完整 JSON 对象
-                depth = 0
-                end_idx = start_idx
-                for i in range(start_idx, len(response_text)):
-                    if response_text[i] == '{':
-                        depth += 1
-                    elif response_text[i] == '}':
-                        depth -= 1
-                        if depth == 0:
-                            end_idx = i + 1
-                            break
-                json_text = response_text[start_idx:end_idx]
-                categories = json.loads(json_text)
-                # 验证分类结果
-                all_indices = set()
-                for cat_indices in categories.values():
-                    all_indices.update(cat_indices)
-                
-                if len(all_indices) < len(news_list):
-                    missing = [i for i in range(len(news_list)) if i not in all_indices]
-                    if "其他" not in categories:
-                        categories["其他"] = []
-                    categories["其他"].extend(missing)
-                
-                return categories
-        else:
-            print(f"AI 分类返回错误码: {result.returncode}")
-            if result.stderr:
-                print(f"错误信息: {result.stderr.decode('utf-8')[:500]}")
+        response_text = response.choices[0].message.content.strip()
+        
+        # 提取 JSON（兼容 markdown 代码块包裹的情况）
+        if response_text.startswith('```'):
+            # 去掉 ```json ... ``` 包裹
+            lines = response_text.split('\n')
+            response_text = '\n'.join(lines[1:-1])
+        
+        categories = json.loads(response_text)
+        
+        # 索引转换：API 返回的索引从 1 开始，内部使用从 0 开始
+        converted = {}
+        for cat, indices in categories.items():
+            converted[cat] = [idx - 1 for idx in indices if isinstance(idx, int)]
+        categories = converted
+        
+        # 验证分类结果：将遗漏的资讯归入"其他"
+        all_indices = set()
+        for cat_indices in categories.values():
+            all_indices.update(cat_indices)
+        
+        if len(all_indices) < len(news_list):
+            missing = [i for i in range(len(news_list)) if i not in all_indices]
+            if "其他" not in categories:
+                categories["其他"] = []
+            categories["其他"].extend(missing)
+        
+        print(f"✅ AI 分类完成")
+        return categories
         
     except Exception as e:
-        print(f"AI 分类失败: {str(e)}")
+        print(f"❌ AI 分类失败: {str(e)}")
     
     # 如果 AI 分类失败，使用关键词分类作为后备
-    print("使用关键词分类作为后备方案")
+    print("⚠️ 使用关键词分类作为后备方案")
     return classify_by_keywords(news_list)
 
 
 def classify_by_keywords(news_list):
-    """智能关键词分类方案（6分类新版）"""
-    classified_indices = set()
+    """加权关键词分类（按优先级匹配）"""
+    if not news_list:
+        return {}
+
+    print(f"🏷️  关键词规则分类 {len(news_list)} 条资讯...")
+
+    classified = set()
     categories = {
         "AI编程与开发": [],
         "AI模型与技术": [],
@@ -204,113 +195,157 @@ def classify_by_keywords(news_list):
         "其他": [],
     }
 
-    # 定义分类规则（按优先级排序）
-    rules = [
-        # AI编程与开发
-        ("AI编程与开发", [
-            "Vibe Coding", "Claude Code", "Cursor", "GitHub Copilot",
-            "编程助手", "代码生成", "IDE插件", "智能编程", "编程技巧",
-            "软件工程", "研发效能", "DevOps", "CI/CD", "代码审查",
-            "从没写过代码", "干掉了一个估算团队",
-            "AI Coding", "AICoding", "AI编程", "编程工具",
-            "Coding", "coding", "Code",
-        ]),
-        # AI模型与技术
-        ("AI模型与技术", [
-            "新论文", "论文", "顶会", "CVPR", "ICLR", "AAAI", "NeurIPS", "ICML",
-            "模型架构", "算法", "推理优化", "微调", "蒸馏", "量化",
-            "多模态", "Transformer", "Benchmark", "评测",
-            "性能直逼", "模型发布", "版本更新", "能力提升",
-        ]),
-        # AI内容创作
-        ("AI内容创作", [
-            "短剧", "视频生成", "AI视频", "AI绘画", "AI写作",
-            "图像生成", "内容创作", "创作工具", "生成式",
-            "Seedance", "Sora", "Midjourney", "Stable Diffusion",
-            "做AI视频", "AI做视频", "视频制作", "内容生产",
-        ]),
-        # AI行业动态
-        ("AI行业动态", [
-            "融资", "投资", "万美元", "亿人民币", "估值", "IPO", "上市",
-            "裁员", "入职", "离职", "人事变动", "任命", "辞职",
-            "收购", "并购", "加入", "联手", "合作",
-            "战争", "杀入", "砸", "亿", "战略", "布局",
-            "创业者", "独角兽", "巨头",
-        ]),
-        # 观点与趋势
-        ("观点与趋势", [
-            "观点", "趋势", "观察", "思考", "分析",
-            "未来", "预测", "影响", "变革", "重塑",
-            "我却", "想要", "感想", "随笔",
-            "改造", "需要的不止是", "的边界",
-        ]),
-        # AI产品与应用
-        ("AI产品与应用", [
-            "发布会", "正式发布", "上线", "推出",
-            "开卖", "送到", "正式", "答案", "方案",
-            "落地", "实践", "业务", "应用",
-            "Agent", "智能体", "SaaS", "平台",
-            "体验", "试用", "评测",
-        ]),
-    ]
-
-    # 非AI内容判断
+    # 非AI内容关键词
     non_ai_keywords = [
         "招聘", "诚聘", "招贤", "加入我们", "简历",
         "直播预告", "预告", "倒计时", "敬请期待",
     ]
 
+    # 加权规则定义：每个元组是 (分类, [(关键词, 权重), ...])
+    # 权重越高越优先匹配，用于同一条匹配多个分类时决定归属
+    rules = [
+        # === 第一层：强信号，几乎不会误判 ===
+        ("AI模型与技术", [
+            # 顶会/论文
+            ("CVPR", 10), ("ICLR", 10), ("NeurIPS", 10), ("AAAI", 10), ("ICML", 10), ("顶会", 10),
+            # 技术指标
+            ("SOTA", 9), ("Benchmark", 9), ("技术报告", 9), ("综述", 9),
+            # VLA/具身技术
+            ("VLA", 8), ("具身", 7),
+            # 算法/模型研究
+            ("微调", 7), ("蒸馏", 7), ("量化", 7), ("推理优化", 7), ("多模态", 7), ("Transformer", 7),
+            ("模型架构", 7), ("算法", 6), ("数据集", 7),
+            # 模型发布/评测
+            ("性能直逼", 8), ("模型发布", 8), ("版本更新", 8),
+            ("高分神话", 7), ("最强模型", 7),
+        ]),
+        ("AI编程与开发", [
+            # 编程工具（精确匹配）
+            ("Claude Code", 10), ("GitHub Copilot", 10), ("Vibe Coding", 10), ("Vibe Design", 10),
+            ("Cursor", 9), ("MCP", 9), ("CLI", 9), ("Copilot", 9),
+            # 编程相关
+            ("代码生成", 8), ("IDE插件", 8), ("智能编程", 8), ("编程助手", 8),
+            ("编码代理", 8), ("AI编码", 8), ("编程代理", 8), ("编码工具", 8),
+            ("软件工程", 8), ("工程规范", 8), ("工程实践", 8), ("研发效能", 8),
+            ("DevOps", 8), ("CI/CD", 8), ("代码审查", 8),
+            ("架构设计", 7), ("Harness", 7), ("开源项目", 7),
+            # AI编程产品
+            ("一句话", 9), ("AI员工", 9), ("AI 员工", 9),
+            ("上线 Web 应用", 9), ("一人公司", 8),
+            ("Codex", 8), ("AI Agent产品", 8), ("AI Agent 产品", 8),
+            # 开发框架/平台
+            ("开发平台", 7), ("Agent框架", 7), ("从零开始设计", 7),
+            ("前端盘点", 7),
+        ]),
+        ("AI内容创作", [
+            # AI视频工具（精确匹配）
+            ("Seedance", 10), ("Sora", 9), ("Midjourney", 9), ("Stable Diffusion", 9),
+            ("Vidu", 9), ("LibTV", 10),
+            # 创作类型
+            ("短剧", 8), ("漫剧", 8), ("3D模型", 8), ("视频生成", 8),
+            ("AI视频", 8), ("AI绘画", 8), ("AI写作", 8), ("图像生成", 8),
+            ("内容创作", 7), ("创作工具", 7), ("生成式", 7),
+            ("做AI视频", 9), ("AI做视频", 9), ("视频制作", 7), ("内容生产", 7),
+            # AI视频进化
+            ("AI视频的进化速度", 9), ("AI视频进化", 9),
+        ]),
+        ("AI行业动态", [
+            # 融资/收购
+            ("收购", 8), ("并购", 8), ("亿美元", 8), ("亿人民币", 8), ("轮融资", 8), ("估值", 7),
+            ("IPO", 8), ("上市", 7), ("裁员", 8), ("跳槽", 8), ("入职", 7), ("离职", 7),
+            # 快讯/速递
+            ("速递", 9), ("早知道", 9), ("快讯", 9),
+            # 事件新闻
+            ("遇袭", 9), ("怒火", 8), ("反AI", 8),
+            # 市场数据
+            ("数据 202", 8), ("GenAI网页产品数据", 9),
+            # 活动
+            ("黑客松", 7), ("创造营", 7), ("晚餐", 6),
+            # 行业人物/公司动作
+            ("创业者", 7), ("独角兽", 7),
+        ]),
+        ("AI产品与应用", [
+            # 测评/体验
+            ("实测", 9), ("一手实测", 10), ("保姆级", 9),
+            ("教程", 8), ("知识库", 7), ("自动化", 6),
+            ("Prompt", 7),
+            # 产品发布
+            ("正式发布", 8), ("开卖", 8),
+            ("机器人", 7), ("AI眼镜", 9), ("智能眼镜", 9),
+            # 产品体验/对比
+            ("体验", 6),
+            # 产品更新汇总
+            ("所有更新一次性看懂", 9), ("一次性看懂", 9),
+            # 产品工作流/方案
+            ("工作流", 6),
+        ]),
+        ("观点与趋势", [
+            # 明确的观点信号
+            ("思考", 7), ("再思考", 9), ("重新认识", 8), ("观察", 6),
+            ("趋势", 7), ("预测", 7), ("影响", 6), ("变革", 7), ("重塑", 7),
+            ("暗线", 9), ("后背发凉", 9), ("神仙打架", 8),
+            ("改造", 6), ("需要的不止是", 7), ("的边界", 6),
+            ("感想", 7), ("随笔", 7),
+            # 行业观察/现象
+            ("孵化器", 7), ("洗脑", 7), ("废纸", 6),
+            # 观点文章常见模式
+            ("我低估了", 8), ("我看到了", 7),
+            ("为什么模型永远无法", 8), ("的真相", 7),
+            ("深度解析", 6), ("深度研究", 7),
+            ("深度思考", 7),
+        ]),
+    ]
+
     for i, news in enumerate(news_list):
-        if i in classified_indices:
+        if i in classified:
             continue
-            
+
         title = news["title"]
-        classified = False
+        matched = False
 
-        # 先检查是否明显非AI内容
-        for keyword in non_ai_keywords:
-            if keyword in title:
+        # 检查非AI内容
+        for kw in non_ai_keywords:
+            if kw in title:
                 categories["其他"].append(i)
-                classified_indices.add(i)
-                classified = True
+                classified.add(i)
+                matched = True
                 break
-        
-        if classified:
+        if matched:
             continue
 
-        # 按优先级检查各分类
-        for category, keywords in rules:
-            for keyword in keywords:
-                if keyword in title:
-                    categories[category].append(i)
-                    classified_indices.add(i)
-                    classified = True
-                    break
-            if classified:
-                break
+        # 用加权规则匹配：收集所有匹配，取权重最高的分类
+        best_cat = None
+        best_weight = 0
 
-        # 如果仍未分类，智能判断
-        if not classified:
-            # 包含模型技术相关 → 模型与技术
-            if any(x in title for x in ["模型架构", "算法创新", "Benchmark", "论文", "顶会"]):
-                categories["AI模型与技术"].append(i)
-                classified_indices.add(i)
-            # 包含产品发布相关 → 产品与应用
-            elif any(x in title for x in ["发布", "上线", "推出", "实测", "体验"]):
-                categories["AI产品与应用"].append(i)
-                classified_indices.add(i)
-            # 包含内容创作相关 → 内容创作
+        for cat, keyword_list in rules:
+            for kw, weight in keyword_list:
+                if kw in title:
+                    if weight > best_weight:
+                        best_weight = weight
+                        best_cat = cat
+
+        if best_cat:
+            categories[best_cat].append(i)
+            classified.add(i)
+            matched = True
+
+        if not matched:
+            # 兜底启发式
+            if any(x in title for x in ["编码", "编程", "代码", "开源", "开发框架"]):
+                categories["AI编程与开发"].append(i)
             elif any(x in title for x in ["视频", "图像", "绘画", "写作", "创作", "生成"]):
                 categories["AI内容创作"].append(i)
-                classified_indices.add(i)
-            # 包含商业动态 → 行业动态
-            elif any(x in title for x in ["融资", "投资", "收购", "上市", "亿"]):
-                categories["AI行业动态"].append(i)
-                classified_indices.add(i)
-            # 默认归入AI产品与应用
-            else:
+            elif any(x in title for x in ["发布", "上线", "推出", "体验"]):
                 categories["AI产品与应用"].append(i)
-                classified_indices.add(i)
+            elif any(x in title for x in ["模型", "算法", "大模型", "AI"]):
+                categories["AI模型与技术"].append(i)
+            elif any(x in title for x in ["融资", "投资", "收购", "上市", "巨头"]):
+                categories["AI行业动态"].append(i)
+            elif any(x in title for x in ["Agent", "智能体"]):
+                categories["AI产品与应用"].append(i)
+            else:
+                categories["观点与趋势"].append(i)
+            classified.add(i)
 
     return categories
 

@@ -3,7 +3,7 @@
 """
 AI 资讯发布到微信公众号（使用 baoyu-markdown-to-html）
 
-直接使用 fetch_ai_news_v4.py 的 get_news_summary 获取 Markdown
+直接使用 fetch_ai_news.py 的 get_news_summary 获取 Markdown
 使用 baoyu-markdown-to-html 转换为 HTML
 
 使用：
@@ -16,32 +16,45 @@ import os
 from pathlib import Path
 from datetime import datetime
 import subprocess
+import importlib.util
 
-# 使用 workspace 根目录作为基准
-# 处理 symlink 情况，先获取脚本的实际路径
-_SCRIPT_REAL_PATH = Path(__file__).resolve()
-# 如果是 symlink，找到实际的 workspace 根目录
-if "/work/media-conent/.claude/skills/" in str(_SCRIPT_REAL_PATH):
-    # 使用硬编码的 workspace 路径
-    WORKSPACE_ROOT = Path("/Users/felix/.openclaw/workspace-fs_news_claw")
-else:
-    WORKSPACE_ROOT = _SCRIPT_REAL_PATH.parents[3]
+# ========== 路径定义（基于脚本位置的相对路径） ==========
+# 脚本所在目录: ai-news-fetcher/scripts/
+SCRIPT_DIR = Path(__file__).resolve().parent
+# skill 根目录: ai-news-fetcher/
+SKILL_ROOT = SCRIPT_DIR.parent
+# skills 总目录: skills/
+SKILLS_DIR = SKILL_ROOT.parent
 
-_AICODING_SCRIPTS = WORKSPACE_ROOT / "skills" / "aicoding-news-weekly" / "scripts"
-_AICODING_ENV = WORKSPACE_ROOT / "skills" / "aicoding-news-weekly" / ".env"
+# 同目录下的 fetch_ai_news.py
+FETCH_SCRIPT = SCRIPT_DIR / "fetch_ai_news.py"
+# 同项目下的 wechat_api_client.py（aicoding-news-weekly skill）
+WECHAT_CLIENT_SCRIPT = SKILLS_DIR / "aicoding-news-weekly" / "scripts" / "wechat_api_client.py"
+
+# ========== 加载环境变量 ==========
+ENV_FILE = SKILL_ROOT / ".env"
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ENV_FILE)
+except ImportError:
+    pass
+
+# 从环境变量读取配置
+BAOYU_SKILL_DIR = Path(os.getenv('BAOYU_MARKDOWN_TO_HTML_DIR', '~/work/skills/baoyu-skills/skills/baoyu-markdown-to-html')).expanduser()
 
 # 默认封面图素材ID
 DEFAULT_THUMB_MEDIA_ID = "qxQUqgd9fe1MaWRFFohGgo8SIofgUyArMyHRseRKpcGrV1yW3yBRRjrd_0Kj41uF"
 
-# 添加 scripts 目录到 Python 路径
-sys.path.insert(0, str(_AICODING_SCRIPTS))
 
-# 加载环境变量
-try:
-    from dotenv import load_dotenv
-    load_dotenv(_AICODING_ENV)
-except ImportError:
-    pass
+def _load_module(name: str, path: Path):
+    """动态加载 Python 模块"""
+    if not path.exists():
+        raise FileNotFoundError(f"{name} 不存在: {path}")
+    spec = importlib.util.spec_from_file_location(name, str(path))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class WeChatNewsPublisher:
@@ -50,10 +63,10 @@ class WeChatNewsPublisher:
     def __init__(self):
         """初始化发布器"""
         # 检查 .env 文件
-        if not _AICODING_ENV.exists():
+        if not ENV_FILE.exists():
             raise FileNotFoundError(
-                f".env 文件不存在: {_AICODING_ENV}\n"
-                f"请在 aicoding-news-weekly 目录下创建 .env 文件"
+                f".env 文件不存在: {ENV_FILE}\n"
+                f"请在 ai-news-fetcher 目录下创建 .env 文件"
             )
         
         # 读取凭证
@@ -63,7 +76,7 @@ class WeChatNewsPublisher:
         if not self.appid or not self.appsecret:
             raise ValueError(
                 ".env 文件中缺少 WECHAT_APPID 或 WECHAT_APPSECRET\n"
-                f"请在 {_AICODING_ENV} 中配置这两个参数"
+                f"请在 {ENV_FILE} 中配置这两个参数"
             )
         
         print(f"✅ 微信公众号凭证已加载")
@@ -71,7 +84,7 @@ class WeChatNewsPublisher:
     
     def get_ai_news_markdown(self, days: int = 1) -> str:
         """
-        直接使用 fetch_ai_news_v4.py 中的 get_news_summary 获取 Markdown
+        直接使用 fetch_ai_news.py 中的 get_news_summary 获取 Markdown
         
         Args:
             days: 获取最近几天的资讯
@@ -81,21 +94,8 @@ class WeChatNewsPublisher:
         """
         print(f"📰 正在获取最近 {days} 天的 AI 资讯...")
         
-        # 导入 fetch_ai_news 模块
-        fetch_script = WORKSPACE_ROOT / "skills" / "ai-news-fetcher" / "scripts" / "fetch_ai_news_v4.py"
-        
-        if not fetch_script.exists():
-            raise FileNotFoundError(
-                f"fetch_ai_news_v4.py 不存在: {fetch_script}\n"
-                f"请确保 ai-news-fetcher skill 已正确安装"
-            )
-        
         try:
-            # 动态导入 fetch_ai_news 模块
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("fetch_ai_news_v4", str(fetch_script))
-            fetch_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(fetch_module)
+            fetch_module = _load_module("fetch_ai_news", FETCH_SCRIPT)
             
             # 直接调用 get_news_summary 函数
             if hasattr(fetch_module, 'get_news_summary'):
@@ -104,7 +104,7 @@ class WeChatNewsPublisher:
                 print(f"   Markdown 长度: {len(markdown_content)} 字节")
                 return markdown_content
             else:
-                raise RuntimeError("fetch_ai_news_v4.py 中缺少 get_news_summary 函数")
+                raise RuntimeError("fetch_ai_news.py 中缺少 get_news_summary 函数")
                 
         except Exception as e:
             raise RuntimeError(f"获取资讯失败: {e}")
@@ -121,19 +121,23 @@ class WeChatNewsPublisher:
         """
         print(f"🔄 正在使用 baoyu-markdown-to-html 转换 Markdown 为 HTML...")
         
+        # 检查 baoyu-markdown-to-html 路径
+        if not BAOYU_SKILL_DIR or not BAOYU_SKILL_DIR.exists():
+            raise FileNotFoundError(
+                f"baoyu-markdown-to-html 目录不存在: {BAOYU_SKILL_DIR}\n"
+                f"请在 {ENV_FILE} 中配置 BAOYU_MARKDOWN_TO_HTML_DIR"
+            )
+        
+        baoyu_main = BAOYU_SKILL_DIR / "scripts" / "main.ts"
+        if not baoyu_main.exists():
+            raise FileNotFoundError(
+                f"baoyu-markdown-to-html main.ts 不存在: {baoyu_main}\n"
+                f"请确保 baoyu-markdown-to-html skill 已正确安装"
+            )
+        
         # 保存 Markdown 到临时文件
         temp_md = Path("/tmp/ai_news_wechat_temp.md")
         temp_md.write_text(markdown_content, encoding='utf-8')
-        
-        # baoyu-markdown-to-html 路径
-        baoyu_skill_dir = WORKSPACE_ROOT / "skills" / "baoyu-markdown-to-html"
-        baoyu_main = baoyu_skill_dir / "scripts" / "main.ts"
-        
-        if not baoyu_main.exists():
-            raise FileNotFoundError(
-                f"baoyu-markdown-to-html 不存在: {baoyu_main}\n"
-                f"请确保 baoyu-markdown-to-html skill 已正确安装"
-            )
         
         try:
             # 使用 npx bun 调用 main.ts
@@ -176,40 +180,31 @@ class WeChatNewsPublisher:
             print(f"   HTML 长度: {len(html_content)} 字节")
             print(f"   HTML 文件: {html_path}")
             
+            return html_content
+            
+        finally:
             # 清理临时文件
             if temp_md.exists():
                 temp_md.unlink()
-            
-            return html_content
-            
-        except Exception as e:
-            raise RuntimeError(f"HTML 转换失败: {e}")
+    
+    def _get_wechat_client(self):
+        """获取微信 API 客户端实例"""
+        wechat_module = _load_module("wechat_api_client", WECHAT_CLIENT_SCRIPT)
+        return wechat_module.WeChatAPIClient(appid=self.appid, appsecret=self.appsecret)
     
     def create_draft(self, html_content: str, cover_image: str = None, thumb_media_id: str = None) -> str:
         """创建草稿"""
         print(f"📝 正在创建草稿...")
         
         today = datetime.now()
-        date_str = today.strftime('%Y年%m月%d日')
         
         title = f"AI 资讯日报-{today.strftime('%Y.%m.%d')}"
         author = "AI 资讯助手"
         digest = f"本期汇总了最新的 AI 相关资讯，涵盖编程工具、模型技术、产品应用和行业动态等内容。"
         content_source_url = ""
         
-        # 调用 wechat_api_client.py 创建草稿
-        wechat_client_script = _AICODING_SCRIPTS / "wechat_api_client.py"
-        
         try:
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("wechat_api_client", str(wechat_client_script))
-            wechat_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(wechat_module)
-            
-            WeChatAPIClient = wechat_module.WeChatAPIClient
-            
-            # 创建客户端实例
-            client = WeChatAPIClient(appid=self.appid, appsecret=self.appsecret)
+            client = self._get_wechat_client()
             
             # 创建草稿
             media_id = client.create_draft(
@@ -234,18 +229,8 @@ class WeChatNewsPublisher:
         """发布草稿"""
         print(f"🚀 正在发布文章...")
         
-        wechat_client_script = _AICODING_SCRIPTS / "wechat_api_client.py"
-        
         try:
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("wechat_api_client", str(wechat_client_script))
-            wechat_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(wechat_module)
-            
-            WeChatAPIClient = wechat_module.WeChatAPIClient
-            
-            # 创建客户端实例
-            client = WeChatAPIClient(appid=self.appid, appsecret=self.appsecret)
+            client = self._get_wechat_client()
             
             # 发布草稿
             publish_id = client.publish_draft(media_id)
@@ -273,8 +258,6 @@ class WeChatNewsPublisher:
         
         if create_only:
             print("✅ 仅创建草稿模式，不进行发布")
-            # 发送完成通知到飞书
-            self.send_completion_notification()
             return media_id
         
         # 发布草稿
@@ -287,32 +270,7 @@ class WeChatNewsPublisher:
         print(f"   请在公众号后台查看: https://mp.weixin.qq.com/")
         print("=" * 50)
         
-        # 发送完成通知到飞书
-        self.send_completion_notification()
-        
         return media_id
-
-    def send_completion_notification(self):
-        """发送执行完成通知到飞书"""
-        print("📱 发送完成通知到飞书...")
-        
-        try:
-            import subprocess
-            result = subprocess.run([
-                "/opt/homebrew/bin/openclaw", "message", "send",
-                "--channel", "feishu",
-                "--account", "fs_news_claw",
-                "--target", "ou_5b479a8489e8ebf34df50794d2a2cb0d",
-                "--message", "✅ AI资讯发布到公众号任务已完成，请在公众号后台查看草稿。"
-            ], capture_output=True, text=True, timeout=30)
-            
-            if result.returncode == 0:
-                print("✅ 飞书通知发送成功")
-            else:
-                print(f"⚠️  飞书通知发送失败: {result.stderr}")
-        except Exception as e:
-            print(f"⚠️  发送飞书通知异常: {e}")
-
 
 def main():
     """主函数"""
@@ -336,7 +294,7 @@ def main():
         publisher = WeChatNewsPublisher()
     except Exception as e:
         print(f"❌ 初始化发布器失败: {e}")
-        print(f"   请检查 aicoding-news-weekly/.env 文件中的 WECHAT_APPID 和 WECHAT_APPSECRET 配置")
+        print(f"   请检查 ai-news-fetcher/.env 文件中的 WECHAT_APPID 和 WECHAT_APPSECRET 配置")
         sys.exit(1)
     
     # 创建草稿
