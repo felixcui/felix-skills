@@ -441,8 +441,15 @@ def format_news_markdown(news_list, categories, start_date, end_date, platform="
     return "\n".join(lines), filtered
 
 
-def get_news_summary(days: int = 1, classify: bool = True, platform: str = "feishu") -> str:
-    """获取并分类汇总 AI 资讯"""
+def get_news_summary(days: int = 1, classify: bool = True, platform: str = "feishu", method: str = "ai") -> str:
+    """获取并分类汇总 AI 资讯
+    
+    Args:
+        days: 获取几天内的资讯
+        classify: 是否进行分类
+        platform: 输出平台类型
+        method: 分类方法，'ai' (AI分类+规则兜底) 或 'rule' (仅规则分类)
+    """
     today = datetime.now()
     yesterday = today - timedelta(days=days)
     after = yesterday.strftime("%Y%m%d")
@@ -480,7 +487,10 @@ def get_news_summary(days: int = 1, classify: bool = True, platform: str = "feis
 """
 
         if classify:
-            categories = classify_news_with_ai(news_list)
+            if method == "rule":
+                categories = classify_by_keywords(news_list)
+            else:
+                categories = classify_news_with_ai(news_list)
         else:
             categories = {"AI相关": list(range(len(news_list)))}
 
@@ -505,4 +515,14 @@ def get_news_summary(days: int = 1, classify: bool = True, platform: str = "feis
 
 
 if __name__ == "__main__":
-    print(get_news_summary())
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="获取并分类 AI 资讯")
+    parser.add_argument("--days", type=int, default=1, help="获取过去几天的资讯，默认为 1")
+    parser.add_argument("--method", type=str, choices=["ai", "rule"], default="ai",
+                        help="分类方法: ai (AI分类+规则兜底), rule (仅规则分类)")
+    
+    args = parser.parse_args()
+    
+    classify = args.method != "none"
+    print(get_news_summary(days=args.days, classify=classify, method=args.method))
