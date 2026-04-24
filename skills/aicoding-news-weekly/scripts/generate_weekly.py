@@ -230,9 +230,7 @@ def publish_to_wechat(
     else:
         # HTML 转换模式（调用 md_to_html.py）
         md_to_html_script = os.path.join(SCRIPT_DIR, "md_to_html.py")
-        # HTML 输出路径：与 md 文件同目录，同名，扩展名改为 .html
-        html_output = os.path.splitext(md_file)[0] + ".html"
-        cmd = [sys.executable, md_to_html_script, md_file, "-o", html_output]
+        cmd = [sys.executable, md_to_html_script, md_file]
 
         if preview:
             cmd.append("--preview")
