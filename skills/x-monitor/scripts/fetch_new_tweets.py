@@ -31,7 +31,7 @@ def load_users():
         return [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
 
-def fetch_latest_tweet(username, timeout=15):
+def fetch_latest_tweet(username, timeout=30):
     try:
         result = subprocess.run(
             ["twitter", "user-posts", username, "--max", "1", "--json"],
