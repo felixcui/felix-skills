@@ -298,13 +298,23 @@ def generate_weekly_report(
     print(f"正在生成周报 ({start_date} 至 {end_date})...")
     result = subprocess.run(cmd, capture_output=True, text=True)
 
+    # 错误检查：退出码非零 或 stdout 为空都视为失败
     if result.returncode != 0:
-        print(f"错误: {result.stderr}")
+        print(f"❌ 获取资讯失败（退出码: {result.returncode}）")
+        if result.stderr:
+            print(result.stderr.strip())
+        return None
+
+    content = result.stdout.strip()
+    if not content:
+        print(f"❌ 获取资讯失败：未返回任何内容")
+        if result.stderr:
+            print(result.stderr.strip())
         return None
 
     # 保存到文件
     with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(result.stdout)
+        f.write(content)
 
     print(f"✓ 周报已保存到: {output_file}")
 

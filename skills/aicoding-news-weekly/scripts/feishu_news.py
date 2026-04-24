@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import argparse
 from pathlib import Path
@@ -348,8 +349,20 @@ def get_news_list(start_date: str = None, end_date: str = None, debug: bool = Fa
             }
         }
         
+    except FeishuConfigError as e:
+        # 凭证配置错误，直接向 stderr 输出并返回错误
+        print(str(e), file=sys.stderr)
+        return {
+            "code": 500,
+            "msg": str(e),
+            "data": {
+                "items": [],
+                "total": 0,
+                "has_more": False
+            }
+        }
     except Exception as e:
-        print(f"Error fetching news: {str(e)}")
+        print(f"Error fetching news: {str(e)}", file=sys.stderr)
         return {
             "code": 500,
             "msg": str(e),
@@ -429,4 +442,5 @@ if __name__ == "__main__":
             formatted_end_date = end_date.replace('-', '.')
             #print(f"AI Coding资讯周报-{formatted_end_date}\n")
     else:
-        print(f"Error: {result['msg']}") 
+        print(f"Error: {result['msg']}", file=sys.stderr)
+        sys.exit(1)
