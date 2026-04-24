@@ -43,6 +43,9 @@ except ImportError:
 # 从环境变量读取配置
 BAOYU_SKILL_DIR = Path(os.getenv('BAOYU_MARKDOWN_TO_HTML_DIR', '~/work/skills/baoyu-skills/skills/baoyu-markdown-to-html')).expanduser()
 
+# 资讯 Markdown 文件输出目录（默认为 skill 目录下的 output 子目录）
+NEWS_OUTPUT_DIR = Path(os.getenv('NEWS_OUTPUT_DIR', str(SKILL_ROOT / 'output'))).expanduser()
+
 # 默认封面图素材ID
 DEFAULT_THUMB_MEDIA_ID = "qxQUqgd9fe1MaWRFFohGgo8SIofgUyArMyHRseRKpcGrV1yW3yBRRjrd_0Kj41uF"
 
@@ -241,6 +244,24 @@ class WeChatNewsPublisher:
         except Exception as e:
             raise RuntimeError(f"发布文章失败: {e}")
     
+    def _save_markdown(self, markdown_content: str) -> None:
+        """将资讯 Markdown 保存到输出目录"""
+        # 确保输出目录存在
+        NEWS_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # 文件名: ai-news-YYYY-MM-DD.md
+        today = datetime.now().strftime('%Y-%m-%d')
+        filename = f"ai-news-{today}.md"
+        output_path = NEWS_OUTPUT_DIR / filename
+        
+        # 如果文件已存在，先删除
+        if output_path.exists():
+            output_path.unlink()
+            print(f"🗑️  已删除旧文件: {output_path}")
+        
+        output_path.write_text(markdown_content, encoding='utf-8')
+        print(f"💾 Markdown 已保存: {output_path}")
+    
     def create_and_publish(self, days: int = 1, cover_image: str = None, thumb_media_id: str = None, create_only: bool = False) -> str:
         """创建并发布资讯"""
         print("=" * 50)
@@ -249,6 +270,9 @@ class WeChatNewsPublisher:
         
         # 获取 Markdown
         markdown_content = self.get_ai_news_markdown(days=days)
+        
+        # 保存 Markdown 文件到输出目录
+        self._save_markdown(markdown_content)
         
         # 转换为 HTML
         html_content = self.convert_to_html(markdown_content)
