@@ -169,6 +169,38 @@ def fetch_wechat_article(url):
         return {"error": f"抓取失败: {str(e)}"}
 
 
+def fetch_wechat_article_defuddle(url):
+    """抓取微信公众号文章 - 使用 defuddle 获取 Markdown 内容"""
+    try:
+        result = subprocess.run(
+            ['defuddle', 'parse', '-j', '--md', url],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            return {"error": f"defuddle 调用失败: {result.stderr}"}
+            
+        data = json.loads(result.stdout.strip())
+        
+        return {
+            "title": data.get("title") or "未知标题",
+            "author": data.get("author") or "未知作者",
+            "publish_time": data.get("published") or "",
+            "content": data.get("content") or "无法提取正文",
+            "url": url
+        }
+    except FileNotFoundError:
+        return {"error": "defuddle 未安装，请先安装 defuddle"}
+    except subprocess.TimeoutExpired:
+        return {"error": "defuddle 调用超时"}
+    except json.JSONDecodeError:
+        return {"error": "defuddle 返回格式解析失败"}
+    except Exception as e:
+        return {"error": f"抓取失败: {str(e)}"}
+
+
 def fetch_generic_article(url):
     """抓取普通网页内容"""
     try:
@@ -266,7 +298,7 @@ def fetch_article(url):
     if is_twitter_url(url):
         return fetch_twitter_tweet(url)
     if is_wechat_article(url):
-        return fetch_wechat_article(url)
+        return fetch_wechat_article_defuddle(url)
     if is_feishu_doc(url):
         return fetch_feishu_doc(url)
     return fetch_generic_article(url)
