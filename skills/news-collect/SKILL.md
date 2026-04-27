@@ -279,11 +279,8 @@ IMA_API_BASE = "https://ima.qq.com"
 4. **上传 NotebookLM**
 5. **推送飞书**
 6. **添加 IMA**
-7. **同步 Wiki** — 每次采集后必须执行：
-   - 将原始文章 markdown 从 `raw/` 目录软链接到 `/Users/felix/wiki/raw/articles/`（文件名格式：`YYYY-MM-DD-slug.md`）
-   - 使用 `delegate_task` 分析文章内容，在 `/Users/felix/wiki/` 中创建或更新相关页面（实体页 `entities/` + 概念页 `concepts/`）
-   - 更新 `/Users/felix/wiki/index.md` 和 `/Users/felix/wiki/log.md`
-   - 页面创建标准参照 `/Users/felix/wiki/SCHEMA.md`
+
+> ⚠️ Wiki 同步已从收集流程中移除，改为每日例行维护任务（21:00）统一批量同步。
 
 ## 常见问题与解决方案
 
