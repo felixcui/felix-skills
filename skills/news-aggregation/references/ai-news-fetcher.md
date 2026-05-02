@@ -173,7 +173,9 @@ if not env_file.exists() and archive_env.exists():
     shutil.copy2(archive_env, env_file)
 ```
 
-**Step 1：用 `execute_code` + `importlib.util` 加载并调用 fetch_ai_news.py**
+**Step 1：用 `execute_code` + `importlib.util` 加载并调用 fetch_ai_news.py（cron 场景必须用 `method="rule"`）**
+
+GLM API 可能挂起超时（见「已知问题」），cron job 无法等待。使用 `method="rule"` 确保 3 秒内完成。
 
 ```python
 import importlib.util
@@ -188,7 +190,8 @@ spec = importlib.util.spec_from_file_location("fetch_ai_news", str(fetch_script)
 fetch_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fetch_module)
 
-markdown_content = fetch_module.get_news_summary(days=1, classify=True, method="ai")
+# ⚠️ cron job 必须用 method="rule"！method="ai" 可能因 GLM API 挂起导致 300s 超时
+markdown_content = fetch_module.get_news_summary(days=1, classify=True, method="rule")
 ```
 
 **Step 2：用 `execute_code` + `subprocess.run(["bun", ...])` 进行 HTML 转换**
@@ -247,14 +250,23 @@ media_id = client.create_draft(
 
 ## 已知问题 / Pitfalls
 
-### ⚠️ GLM API 每月/每周使用上限
+### ⚠️ GLM API 挂起超时（比限流更危险）
 
-当前 `.env` 配置使用 `glm-5-turbo`（智谱 AI 开放平台），该模型对免费/低频账户有**月度调用上限**。当达到上限时返回 `Error code: 429 - "您已达到每周/每月使用上限"`，脚本自动降级为关键词分类。
+当前 `.env` 配置使用 `glm-5-turbo`（智谱 AI 开放平台），该 API 有两种失败模式：
+
+| 模式 | 表现 | 影响 |
+|------|------|------|
+| **限流（429）** | 返回 `Error code: 429`，脚本自动降级为关键词分类 | 无害，降级自动发生 |
+| **挂起超时** | API 无响应，`execute_code` 等待 300 秒后超时被杀 | **严重的 cron job 失败**，整次执行中断 |
+
+**关键结论：cron job 中必须使用 `method="rule"` 而非 `method="ai"`，以避免 GLM API 挂起导致整个任务失败。**
+- `method="rule"` 完成约 2.6 秒，纯本地关键词分类
+- `method="ai"` 可能挂起 300+ 秒（占用工具执行额度 + 整体流程阻塞）
 
 **处理方式：**
-- 无需手动干预，降级自动发生
-- 使用 `method="rule"` 参数可强制使用关键词分类，跳过 AI API 调用
-- 若需恢复 AI 分类，可切换至其他 OpenAI 兼容 API（如阿里云百炼的 `qwen-plus`）
+- **cron job 场景**：始终使用 `method="rule"`，可靠性优先
+- **交互式场景**：如需 AI 分类，可切换至阿里云百炼 `qwen-plus`（DashScope 兼容接口，稳定性优于 GLM）
+- 如需恢复 AI 分类到 GLM，等待下个计费周期或更换 API 密钥
 
 ### ⚠️ `.env` 文件位置
 
