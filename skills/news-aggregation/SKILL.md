@@ -36,6 +36,11 @@ Sources ──→ Classify ─┼─ news-collect ───────→ Feish
 | "Publish news to WeChat" | ai-news-fetcher's `publish_to_wechat.py` |
 | "Push to Feishu" | news-collect (default) or aicoding-news-weekly |
 
+## Critical Rules
+
+- **不要降级任务**：周报生成、资讯抓取等任务必须按完整流程执行，不得自行简化步骤或降低输出质量。遇到问题（API 失败、数据缺失、脚本报错等）应直接报告问题，而不是降级处理。
+- **路径注意**：aicoding-news-weekly 的脚本实际位于 `scripts/aicoding-news-weekly/` 子目录下（不是 skill 根目录），完整路径见 references。
+
 ## Common Infrastructure
 
 All three skills share:
@@ -47,5 +52,5 @@ All three skills share:
 ## References
 
 - `references/ai-news-fetcher.md` — Full AI news fetcher from WeChat RSS
-- `references/aicoding-news-weekly.md` — Weekly report generator from Feishu
+- `references/aicoding-news-weekly.md` — Weekly report generator from Feishu (scripts at `scripts/aicoding-news-weekly/`)
 - `references/news-collect.md` — One-stop article collector
