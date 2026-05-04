@@ -20,16 +20,16 @@ metadata: { "openclaw": { "emoji": "📰", "requires": { "bins": ["python3"] } }
 ## 功能特点
 
 - ✅ **一站式处理**：一个命令完成抓取、摘要、推送全流程
-- ✅ **多引擎摘要**：默认读取 `~/.hermes/config.yaml` 模型配置生成摘要，支持 Claude Code 和纯规则引擎
+- ✅ **多引擎摘要**：默认使用 GLM API 生成摘要，支持 Claude Code 和纯规则引擎
 - ✅ **支持多源**：微信公众号、普通网页、Twitter/X 自动识别
-- ✅ **自动降级**：API 不可用时自动使用规则生成摘要
+- ✅ **自动降级**：LLM 不可用时自动使用规则生成摘要
 - ✅ **自动推送**：支持飞书 webhook 推送
 - ✅ **NotebookLM 集成**：直接上传并生成多种格式
 
 ## 前置要求
 
 - Python 3.6+
-- Hermes 配置文件中有可用的模型 API key（`~/.hermes/config.yaml`，默认摘要引擎自动读取）
+- Hermes 配置文件中有 GLM API key（`~/.hermes/config.yaml`，默认摘要引擎自动读取）
 - NotebookLM CLI（Python 3.14 版本，可选）
 - requests、beautifulsoup4、pyyaml 库
 
@@ -104,7 +104,7 @@ python3 scripts/collect_v2.py <URL> --webhook "https://your-webhook-url"
 ### 选择摘要引擎
 
 ```bash
-# 默认（读取 ~/.hermes/config.yaml 中的模型配置）
+# GLM API（默认，速度快）
 python3 scripts/collect_v2.py <URL> --summary-engine glm
 
 # Claude Code（高质量，需安装 claude CLI）
@@ -114,7 +114,7 @@ python3 scripts/collect_v2.py <URL> --summary-engine claude
 python3 scripts/collect_v2.py <URL> --summary-engine rule
 ```
 
-> 默认 `glm` 引擎会动态读取 `~/.hermes/config.yaml` 中的 `model` 配置（base_url、api_key、default），因此实际使用哪个 provider 取决于 config 中的设置，不限于 GLM。如果 API 调用失败（401/429 等），自动降级为规则提取。
+> GLM API 配置自动从 `~/.hermes/config.yaml` 读取。如果 GLM 不可用（余额不足、网络等），自动降级为规则提取。
 
 ### 调整摘要长度
 
@@ -269,7 +269,7 @@ IMA_API_BASE = "https://ima.qq.com"
 | `--webhook` | 自定义飞书webhook | 内置地址 |
 | `--no-push` | 不推送到飞书，仅输出结果 | False |
 | `--summary-length` | 摘要最大长度 | 200 |
-| `--summary-engine` | 摘要引擎：glm(默认,读取config.yaml) / claude / rule | glm |
+| `--summary-engine` | 摘要引擎：glm(默认) / claude / rule | glm |
 | `--notebook` | 上传到 NotebookLM | False |
 | `--format` | NotebookLM 生成格式 | - |
 | `--batch` | 批量处理URL文件 | - |
@@ -279,7 +279,7 @@ IMA_API_BASE = "https://ima.qq.com"
 ### 完整流程（NotebookLM 模式）
 
 1. **抓取内容** - 自动识别来源类型并抓取
-2. **生成摘要** - 默认读取 config.yaml 模型配置，支持 `--summary-engine` 切换
+2. **生成摘要** - 默认使用 GLM API，支持 `--summary-engine` 切换
 3. **创建 Markdown** - 标准化格式
 4. **上传 NotebookLM** - 自动创建「AI 资讯」笔记本并上传
 5. **生成格式** - 根据参数生成报告/思维导图/PPT/播客/Quiz
