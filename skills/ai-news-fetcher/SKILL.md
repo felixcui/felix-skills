@@ -190,8 +190,8 @@ spec = importlib.util.spec_from_file_location("fetch_ai_news", str(fetch_script)
 fetch_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fetch_module)
 
-# ⚠️ cron job 必须用 method="rule"！method="ai" 可能因 GLM API 挂起导致 300s 超时
-markdown_content = fetch_module.get_news_summary(days=1, classify=True, method="rule")
+# 默认使用大模型分类（已设置 30s 超时，失败自动降级为关键词分类）
+markdown_content = fetch_module.get_news_summary(days=1, classify=True, method="ai")
 ```
 
 **Step 2：用 `execute_code` + `subprocess.run(["bun", ...])` 进行 HTML 转换**
@@ -250,23 +250,18 @@ media_id = client.create_draft(
 
 ## 已知问题 / Pitfalls
 
-### ⚠️ GLM API 挂起超时（比限流更危险）
+### ⚠️ GLM API 超时保护
 
 当前 `.env` 配置使用 `glm-5-turbo`（智谱 AI 开放平台），该 API 有两种失败模式：
 
 | 模式 | 表现 | 影响 |
 |------|------|------|
 | **限流（429）** | 返回 `Error code: 429`，脚本自动降级为关键词分类 | 无害，降级自动发生 |
-| **挂起超时** | API 无响应，`execute_code` 等待 300 秒后超时被杀 | **严重的 cron job 失败**，整次执行中断 |
+| **挂起超时** | API 无响应，OpenAI client 在 30 秒后超时，脚本自动降级为关键词分类 | 无害，降级自动发生 |
 
-**关键结论：cron job 中必须使用 `method="rule"` 而非 `method="ai"`，以避免 GLM API 挂起导致整个任务失败。**
-- `method="rule"` 完成约 2.6 秒，纯本地关键词分类
-- `method="ai"` 可能挂起 300+ 秒（占用工具执行额度 + 整体流程阻塞）
-
-**处理方式：**
-- **cron job 场景**：始终使用 `method="rule"`，可靠性优先
-- **交互式场景**：如需 AI 分类，可切换至阿里云百炼 `qwen-plus`（DashScope 兼容接口，稳定性优于 GLM）
-- 如需恢复 AI 分类到 GLM，等待下个计费周期或更换 API 密钥
+**默认使用 `method="ai"`（大模型分类），已设置 30 秒超时保护，失败自动降级为关键词分类。**
+- `method="ai"` 使用 OpenAI 兼容 API 进行智能分类，超时或失败时自动降级
+- `method="rule"` 仅用纯关键词分类，可在 AI API 不可用时手动指定
 
 ### ⚠️ `.env` 文件位置
 

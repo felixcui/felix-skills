@@ -326,25 +326,28 @@ def generate_summary_with_glm(content, title="", max_length=200):
 
     content = content.strip()[:2000]
 
-    prompt = f"""请用{max_length}字以内总结这篇文章的核心观点，要求：
-1. 一段完整的话，以句号结尾
-2. 不要省略号
-3. 突出关键信息
-4. 不要代码和命令行
-5. 直接输出摘要，不要标题
+    prompt = f"""请直接输出以下文章的摘要，{max_length}字以内，一段话，以句号结尾。不要输出任何分析过程、思考步骤或约束条件复述。
 
 标题：{title}
 
 内容：
 {content}
-"""
+
+摘要："""
 
     try:
-        config = _load_hermes_config()
-        model_cfg = config.get("model", {})
-        base_url = model_cfg.get("base_url", "https://open.bigmodel.cn/api/paas/v4")
-        api_key = model_cfg.get("api_key", "")
-        model_name = model_cfg.get("default", "glm-5-turbo")
+        # 从 skill 自身的 .env 文件读取 API 配置
+        skill_env_path = Path(__file__).resolve().parent.parent / ".env"
+        api_key, base_url, model_name = "", "https://open.bigmodel.cn/api/paas/v4", "glm-5-turbo"
+        if skill_env_path.exists():
+            for line in skill_env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("OPENAI_API_KEY="):
+                    api_key = line.split("=", 1)[1].strip()
+                elif line.startswith("OPENAI_BASE_URL="):
+                    base_url = line.split("=", 1)[1].strip()
+                elif line.startswith("OPENAI_MODEL="):
+                    model_name = line.split("=", 1)[1].strip()
 
         if not api_key:
             print("   ⚠️ GLM API key 未配置，使用规则生成摘要...")
@@ -378,6 +381,11 @@ def generate_summary_with_glm(content, title="", max_length=200):
             summary = re.sub(r'\.{3}', '', summary)
             summary = re.sub(r'…', '', summary)
 
+            # 检测伪摘要：推理模型偶尔输出分析过程而非实际摘要
+            if re.match(r'^[\d]+\.\s*\*{0,2}(分析|任务|长度|格式|内容|约束|要求)', summary):
+                print(f"   ⚠️ GLM 输出了分析过程而非摘要，使用规则生成...")
+                return generate_summary_rule_based(content, title, max_length)
+
             if len(summary) > 50:
                 if len(summary) > max_length:
                     truncated = summary[:max_length]
@@ -398,77 +406,13 @@ def generate_summary_with_glm(content, title="", max_length=200):
         return generate_summary_rule_based(content, title, max_length)
 
 
-def generate_summary_with_claude(content, title="", max_length=200):
-    """使用 Claude Code 生成文章摘要"""
-    if not content:
-        return ""
-
-    content = content.strip()[:2000]
-
-    prompt = f"""请用{max_length}字以内总结这篇文章的核心观点，要求：
-1. 一段完整的话，以句号结尾
-2. 不要省略号
-3. 突出关键信息
-4. 不要代码和命令行
-5. 直接输出摘要，不要标题
-
-标题：{title}
-
-内容：
-{content}
-"""
-
-    try:
-        print("   使用 Claude Code 生成摘要...")
-        result = subprocess.run(
-            ["claude", "-p", "--permission-mode", "bypassPermissions", "--output-format", "text", prompt],
-            capture_output=True,
-            text=True,
-            timeout=90
-        )
-
-        if result.returncode == 0:
-            summary = result.stdout.strip()
-            # 清理摘要
-            summary = re.sub(r'^["\']|["\']$', '', summary)
-            summary = re.sub(r'^(摘要|总结)[:：]?\s*', '', summary)
-            summary = re.sub(r'\.{3}', '', summary)
-            summary = re.sub(r'…', '', summary)
-
-            if len(summary) > 50:
-                # 如果超过长度限制，智能截断到完整句子
-                if len(summary) > max_length:
-                    truncated = summary[:max_length]
-                    # 找到最后一个句号的位置
-                    last_period = truncated.rfind('。')
-                    if last_period > max_length * 0.6:  # 确保至少保留60%内容
-                        summary = truncated[:last_period+1]
-                    else:
-                        # 如果找不到合适的句号，直接截断并添加句号
-                        summary = truncated.rstrip() + '。'
-                # 确保摘要以句号结尾
-                if not summary.endswith('。'):
-                    summary = summary.rstrip('.') + '。'
-                print(f"   使用 Claude Code 生成摘要 ({len(summary)}字)")
-                return summary
-    except subprocess.TimeoutExpired:
-        print("   Claude Code 超时，使用规则生成摘要...")
-        return generate_summary_rule_based(content, title, max_length)
-    except Exception as e:
-        print(f"   Claude Code 不可用: {e}")
-
-    print("   使用规则生成摘要...")
-    return generate_summary_rule_based(content, title, max_length)
-
 
 def generate_summary_with_llm(content, title="", max_length=200, engine="glm"):
     """使用指定 LLM 引擎生成文章摘要
 
-    engine: "glm" (默认) | "claude" | "rule"
+    engine: "glm" (默认) | "rule"
     """
-    if engine == "claude":
-        return generate_summary_with_claude(content, title, max_length)
-    elif engine == "rule":
+    if engine == "rule":
         return generate_summary_rule_based(content, title, max_length)
     else:
         # 默认使用 GLM
@@ -617,22 +561,41 @@ def setup_notebooklm_notebook():
         return False
 
 
-def upload_to_notebooklm(file_path, title):
-    """上传本地 Markdown 文件到 NotebookLM"""
+import time
+
+
+def upload_to_notebooklm(file_path, title, max_retries=3, retry_delay=3):
+    """上传本地 Markdown 文件到 NotebookLM（带自动重试）"""
     try:
         print(f"   上传到 NotebookLM...")
-        result = subprocess.run(
-            [NOTEBOOKLM_CMD, 'source', 'add', str(file_path), '--title', title],
-            capture_output=True,
-            text=True
-        )
-        
-        if result.returncode == 0:
-            print(f"   ✅ 上传成功，已添加到「{NOTEBOOK_NAME}」笔记本")
-            return True
-        else:
-            print(f"   ⚠️ 上传失败: {result.stderr}")
-            return False
+        for attempt in range(1, max_retries + 1):
+            result = subprocess.run(
+                [NOTEBOOKLM_CMD, 'source', 'add', str(file_path), '--title', title],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+
+            if result.returncode == 0:
+                print(f"   ✅ 上传成功，已添加到「{NOTEBOOK_NAME}」笔记本")
+                return True
+
+            # 判断是否为可重试错误（服务端偶发抖动通常返回空错误信息）
+            stderr = result.stderr.strip() if result.stderr else ''
+            stdout = result.stdout.strip() if result.stdout else ''
+            error_msg = stderr or stdout or '(空错误)'
+
+            if attempt < max_retries:
+                wait = retry_delay * attempt  # 递增等待：3s, 6s
+                print(f"   ⚠️ 上传失败 (第{attempt}次): {error_msg}")
+                print(f"   ⟳ {wait}秒后重试...")
+                time.sleep(wait)
+            else:
+                print(f"   ⚠️ 上传失败 (已重试{max_retries-1}次): {error_msg}")
+                return False
+    except subprocess.TimeoutExpired:
+        print(f"   ⚠️ NotebookLM 上传超时（已重试{max_retries-1}次）")
+        return False
     except Exception as e:
         print(f"   ⚠️ 上传失败: {e}")
         return False
@@ -781,7 +744,7 @@ def main():
     parser.add_argument('--notebook', action='store_true', default=True, help='上传到 NotebookLM（默认开启）')
     parser.add_argument('--no-notebook', action='store_true', help='不上传到 NotebookLM')
     parser.add_argument('--summary-length', type=int, default=200, help='摘要长度（默认200字）')
-    parser.add_argument('--summary-engine', choices=['glm', 'claude', 'rule'], default='glm', help='摘要引擎：glm(默认) | claude | rule')
+    parser.add_argument('--summary-engine', choices=['glm', 'rule'], default='glm', help='摘要引擎：glm(默认) | rule')
     parser.add_argument('--output-dir', help='自定义文章存储目录，支持 ~ 写法。默认: ~/work/github/media-conent/raw')
     
     args = parser.parse_args()
