@@ -565,12 +565,23 @@ import time
 
 
 def upload_to_notebooklm(file_path, title, max_retries=3, retry_delay=3):
-    """上传本地 Markdown 文件到 NotebookLM（带自动重试）"""
+    """上传本地 Markdown 文件到 NotebookLM（带自动重试）。
+
+    NotebookLM 对特殊字符文件名兼容性差，上传时自动去除特殊字符保留中文。
+    """
     try:
         print(f"   上传到 NotebookLM...")
+
+        # 去除文件名中的特殊字符（保留中文、字母、数字、下划线、连字符、点号）
+        import tempfile
+        original_path = Path(file_path)
+        safe_name = re.sub(r'[^\w\u4e00-\u9fff.\-]', '', original_path.stem) or 'upload'
+        tmp_path = Path(tempfile.gettempdir()) / f"{safe_name}.md"
+        tmp_path.write_text(original_path.read_text(encoding='utf-8'), encoding='utf-8')
+
         for attempt in range(1, max_retries + 1):
             result = subprocess.run(
-                [NOTEBOOKLM_CMD, 'source', 'add', str(file_path), '--title', title],
+                [NOTEBOOKLM_CMD, 'source', 'add', str(tmp_path), '--title', title],
                 capture_output=True,
                 text=True,
                 timeout=60
@@ -578,6 +589,7 @@ def upload_to_notebooklm(file_path, title, max_retries=3, retry_delay=3):
 
             if result.returncode == 0:
                 print(f"   ✅ 上传成功，已添加到「{NOTEBOOK_NAME}」笔记本")
+                tmp_path.unlink(missing_ok=True)
                 return True
 
             # 判断是否为可重试错误（服务端偶发抖动通常返回空错误信息）
@@ -592,12 +604,15 @@ def upload_to_notebooklm(file_path, title, max_retries=3, retry_delay=3):
                 time.sleep(wait)
             else:
                 print(f"   ⚠️ 上传失败 (已重试{max_retries-1}次): {error_msg}")
+                tmp_path.unlink(missing_ok=True)
                 return False
     except subprocess.TimeoutExpired:
         print(f"   ⚠️ NotebookLM 上传超时（已重试{max_retries-1}次）")
+        tmp_path.unlink(missing_ok=True)
         return False
     except Exception as e:
         print(f"   ⚠️ 上传失败: {e}")
+        tmp_path.unlink(missing_ok=True)
         return False
 
 

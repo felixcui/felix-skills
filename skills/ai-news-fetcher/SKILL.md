@@ -28,24 +28,22 @@ description: 获取 AI 领域最新资讯并进行智能分类。从微信公众
 ## 目录结构（实际路径）
 
 ```
-news-aggregation/                                        # 实际根目录（umbrella skill）
+ai-news-fetcher/                                        # skill 根目录
+├── SKILL.md
 ├── .env                                                 # 环境变量（需从 .archive 复制）
 ├── scripts/
-│   ├── ai-news-fetcher/
-│   │   ├── fetch_ai_news.py                # 资讯获取与智能分类（核心脚本）
-│   │   ├── fetch_ai_news_v4.py             # 纯关键词分类版（无AI API依赖）
-│   │   ├── publish_to_wechat.py            # 微信公众号发布（统一发布器）
-│   │   ├── publish_to_wechat_daily.sh      # 每日定时发布脚本
-│   │   └── send_ai_news.sh                 # 获取资讯并输出
-│   └── aicoding-news-weekly/
-│       └── wechat_api_client.py            # 微信 API 封装（被 publish_to_wechat.py 引用）
+│   ├── fetch_ai_news.py                # 资讯获取与智能分类（核心脚本）
+│   ├── fetch_ai_news_v4.py             # 纯关键词分类版（无AI API依赖）
+│   ├── publish_to_wechat.py            # 微信公众号发布（统一发布器）
+│   ├── publish_to_wechat_daily.sh      # 每日定时发布脚本
+│   └── send_ai_news.sh                 # 获取资讯并输出
 └── references/
     ├── .env.example                        # 环境变量模板
     ├── ai-news-fetcher.env.example         # ai-news-fetcher 专用环境变量
     └── ai-news-fetcher.md                  # 本文件
 ```
 
-> **注意：** `.env` 文件位于 `scripts/` 目录下（而非 `ai-news-fetcher/` 下）。因为脚本通过 `ScriptDir.parent` 定位 `.env`，而 `ScriptDir = scripts/ai-news-fetcher/`，所以 `ScriptDir.parent = scripts/`。`.env` 文件的归档备份在 `~/.hermes/skills/.archive/ai-news-fetcher/.env`，首次执行需复制到 `scripts/` 目录。
+> **注意：** `.env` 文件位于 `scripts/` 目录下。`wechat_api_client.py` 位于 `aicoding-news-weekly/scripts/` 下。
 
 ## 前置条件
 
@@ -164,7 +162,7 @@ RSS API 域名 `wexinrss.zeabur.app` 使用 `.app` TLD，会被 `terminal()` 工
 from pathlib import Path
 import shutil
 
-scripts_dir = Path.home() / '.hermes/skills/felix-skills/skills/news-aggregation/scripts'
+scripts_dir = Path.home() / '.hermes/skills/felix-skills/skills/ai-news-fetcher/scripts'
 env_file = scripts_dir / '.env'
 archive_env = Path.home() / '.hermes/skills/.archive/ai-news-fetcher/.env'
 
@@ -182,10 +180,10 @@ import importlib.util
 from pathlib import Path
 from dotenv import load_dotenv
 
-scripts_dir = Path.home() / '.hermes/skills/felix-skills/skills/news-aggregation/scripts'
+scripts_dir = Path.home() / '.hermes/skills/felix-skills/skills/ai-news-fetcher/scripts'
 load_dotenv(scripts_dir / '.env')
 
-fetch_script = scripts_dir / 'ai-news-fetcher' / 'fetch_ai_news.py'
+fetch_script = scripts_dir / 'fetch_ai_news.py'
 spec = importlib.util.spec_from_file_location("fetch_ai_news", str(fetch_script))
 fetch_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fetch_module)
@@ -242,9 +240,9 @@ media_id = client.create_draft(
 
 ### 关键路径（修正版）
 
-- `.env` 文件位置：`~/.hermes/skills/felix-skills/skills/news-aggregation/scripts/.env`
-- `fetch_ai_news.py`：`<root>/scripts/ai-news-fetcher/fetch_ai_news.py`
-- `wechat_api_client.py`：`<root>/scripts/aicoding-news-weekly/wechat_api_client.py`
+- `.env` 文件位置：`~/.hermes/skills/felix-skills/skills/ai-news-fetcher/scripts/.env`
+- `fetch_ai_news.py`：`<root>/scripts/fetch_ai_news.py`
+- `wechat_api_client.py`：`~/.hermes/skills/felix-skills/skills/aicoding-news-weekly/scripts/wechat_api_client.py`
 - `baoyu-markdown-to-html`：`~/work/skills/baoyu-skills/skills/baoyu-markdown-to-html/scripts/main.ts`
 - `.env` 归档备份：`~/.hermes/skills/.archive/ai-news-fetcher/.env`（首次执行需复制到 `scripts/`）
 

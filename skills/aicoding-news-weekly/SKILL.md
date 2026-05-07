@@ -10,13 +10,14 @@ description: 生成 AICoding 基地的每周资讯报告，支持公众号预览
 ## 技能结构
 
 ```
-/Users/felix/.hermes/skills/felix-skills/skills/news-aggregation/
-└── scripts/
-    └── aicoding-news-weekly/        # 脚本目录
-        ├── generate_weekly.py       # 主脚本：生成周报
-        ├── feishu_news.py           # 飞书 API 调用
-        ├── md_to_html.py            # 公众号发布工具
-        └── wechat_api_client.py     # 微信 API 客户端
+aicoding-news-weekly/
+├── SKILL.md
+├── scripts/
+│   ├── generate_weekly.py       # 主脚本：生成周报
+│   ├── feishu_news.py           # 飞书 API 调用
+│   ├── md_to_html.py            # 公众号发布工具
+│   └── wechat_api_client.py     # 微信 API 客户端
+└── output/                      # 周报输出目录
 ```
 
 ## 执行步骤
@@ -24,7 +25,7 @@ description: 生成 AICoding 基地的每周资讯报告，支持公众号预览
 使用绝对路径运行（cron 任务和手动执行都用此路径）：
 
 ```bash
-python /Users/felix/.hermes/skills/felix-skills/skills/news-aggregation/scripts/aicoding-news-weekly/generate_weekly.py --weixin
+python /Users/felix/.hermes/skills/felix-skills/skills/aicoding-news-weekly/scripts/generate_weekly.py --weixin
 ```
 
 该脚本会自动：
@@ -48,7 +49,7 @@ python /Users/felix/.hermes/skills/felix-skills/skills/news-aggregation/scripts/
 ## 自定义选项
 
 ```bash
-SCRIPT="/Users/felix/.hermes/skills/felix-skills/skills/news-aggregation/scripts/aicoding-news-weekly/generate_weekly.py"
+SCRIPT="/Users/felix/.hermes/skills/felix-skills/skills/aicoding-news-weekly/scripts/generate_weekly.py"
 
 # 生成本周周报（默认）
 python $SCRIPT
