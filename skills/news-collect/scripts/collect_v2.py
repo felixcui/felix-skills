@@ -36,8 +36,9 @@ def is_wechat_article(url):
 
 
 def is_twitter_url(url):
-    """判断是否是 Twitter/X 链接"""
-    return bool(re.match(r'https?://(x\.com|twitter\.com)/\w+/status/\d+', url))
+    """判断是否是 Twitter/X 链接（包括 /i/article/ 长文链接）"""
+    return bool(re.match(r'https?://(x\.com|twitter\.com)/\w+/status/\d+', url)) or \
+           bool(re.match(r'https?://(x\.com|twitter\.com)/i/article/\d+', url))
 
 
 def is_feishu_doc(url):
@@ -248,37 +249,96 @@ def fetch_generic_article(url):
         return {"error": f"抓取失败: {str(e)}"}
 
 
+TWITTER_CLI = "/Users/felix/.local/bin/twitter"
+
+
+def _parse_twitter_timestamp(ts_str):
+    """解析 twitter CLI 的时间戳（支持 ISO 格式和 Unix 时间戳）"""
+    if not ts_str:
+        return ""
+    # ISO 格式: 2026-05-08T17:56:30+00:00
+    if "T" in str(ts_str):
+        try:
+            from datetime import timezone
+            dt = datetime.fromisoformat(str(ts_str))
+            if dt.tzinfo:
+                dt = dt.astimezone(timezone.utc).astimezone()
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+        except (ValueError, TypeError):
+            pass
+    # 回退到原始 format_timestamp
+    return format_timestamp(ts_str)
+
+
 def fetch_twitter_tweet(url):
-    """使用 twitter-cli 获取推文内容"""
+    """使用 twitter CLI 获取推文内容（支持普通推文和 X Article 长文）"""
+    # 如果是 /i/article/ 链接，需要先获取对应的 status URL
+    fetch_url = url
+    if "/i/article/" in url:
+        # twitter CLI 的 tweet 子命令需要 status URL，尝试直接用 article URL
+        # 如果失败，会回退到错误提示
+        pass
+
     try:
         result = subprocess.run(
-            ["twitter", "tweet", url, "--json"],
+            [TWITTER_CLI, "tweet", fetch_url, "--json"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=60
         )
-        if result.returncode == 0 and result.stdout.strip():
-            data = json.loads(result.stdout.strip())
-            tweet_list = data.get("data", data)
-            if isinstance(tweet_list, list) and tweet_list:
-                tweet_data = tweet_list[0]
-            else:
-                tweet_data = tweet_list
-            return {
-                "title": f"@{tweet_data.get('author', {}).get('username', '')} 的推文",
-                "author": tweet_data.get("author", {}).get("name", ""),
-                "publish_time": format_timestamp(tweet_data.get("createdAt", "")) if tweet_data.get("createdAt") else "",
-                "content": tweet_data.get("text", ""),
-                "url": url
-            }
+        if result.returncode != 0 or not result.stdout.strip():
+            return {"error": f"twitter CLI 获取失败: {result.stderr.strip() or '未知错误'}"}
+
+        data = json.loads(result.stdout.strip())
+        tweet_list = data.get("data", data)
+        if isinstance(tweet_list, list) and tweet_list:
+            tweet_data = tweet_list[0]
+        elif isinstance(tweet_list, dict):
+            tweet_data = tweet_list
         else:
-            return {"error": f"twitter-cli 获取失败: {result.stderr.strip() or '未知错误'}"}
+            return {"error": "twitter CLI 未返回有效推文数据（可能推文不存在或不可访问）"}
+
+        author_info = tweet_data.get("author", {})
+        screen_name = author_info.get("screenName", "")
+        author_name = author_info.get("name", "")
+
+        # 判断是否为 X Article 长文
+        article_title = tweet_data.get("articleTitle")
+        article_text = tweet_data.get("articleText")
+
+        if article_title and article_text:
+            # Article 类型：使用完整长文内容
+            title = article_title
+            content = article_text
+        else:
+            # 普通推文：使用 text 字段
+            title = f"@{screen_name} 的推文"
+            content = tweet_data.get("text", "")
+
+        # 补充 metrics 信息到 content 末尾
+        metrics = tweet_data.get("metrics", {})
+        likes = metrics.get("likes", 0)
+        retweets = metrics.get("retweets", 0)
+        views = metrics.get("views", 0)
+        bookmarks = metrics.get("bookmarks", 0)
+        if any([likes, retweets, views, bookmarks]):
+            content += f"\n\n---\n📊 互动数据：❤️ {likes} | 🔁 {retweets} | 👁 {views} | 🔖 {bookmarks}"
+
+        return {
+            "title": title,
+            "author": f"{author_name} (@{screen_name})",
+            "publish_time": _parse_twitter_timestamp(tweet_data.get("createdAtISO", "")),
+            "content": content,
+            "url": url
+        }
     except FileNotFoundError:
-        return {"error": "twitter-cli 未安装，请运行: uv tool install twitter-cli"}
+        return {"error": f"twitter CLI 未找到: {TWITTER_CLI}"}
     except subprocess.TimeoutExpired:
-        return {"error": "twitter-cli 超时"}
+        return {"error": "twitter CLI 超时（60s）"}
+    except json.JSONDecodeError as e:
+        return {"error": f"twitter CLI 返回无效 JSON: {str(e)}"}
     except Exception as e:
-        return {"error": f"twitter-cli 错误: {str(e)}"}
+        return {"error": f"twitter CLI 错误: {str(e)}"}
 
 
 def format_timestamp(timestamp_str):
@@ -647,7 +707,7 @@ def push_to_feishu(url, title, summary, webhook_url=None):
 # ============ IMA 知识库 ============
 
 def add_to_ima_kb(url):
-    """添加微信公众号文章到 IMA 知识库"""
+    """添加文章 URL 到 IMA 知识库（支持公众号、X/Twitter、飞书文档等公网可访问的 URL）"""
     client_id = ""
     api_key = ""
     
@@ -825,8 +885,8 @@ def main():
             print(f"❌ 推送失败: {response.get('error', '未知错误')}")
             sys.exit(1)
     
-    # 6. 添加到 IMA 知识库
-    if not args.no_push and IMA_KB_ENABLED and is_wechat_article(args.url):
+    # 6. 添加到 IMA 知识库（排除 X/Twitter，IMA 无法解析其页面）
+    if not args.no_push and IMA_KB_ENABLED and not is_twitter_url(args.url):
         print("\n[6/6] 添加到 IMA 知识库...")
         try:
             add_to_ima_kb(args.url)

@@ -10,37 +10,25 @@ from datetime import datetime, timedelta, timezone
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 USERS_FILE = os.path.join(SCRIPT_DIR, "users.txt")
 OUTPUT_FILE = "/tmp/x-monitor-ai-trending.json"
-OPENCLI = "/opt/homebrew/bin/opencli"
-
-# X/Twitter Snowflake ID 基准时间: 2010-11-04 01:42:54 UTC (毫秒)
-TWITTER_EPOCH_MS = 1288834974657
+TWITTER_CLI = "/Users/felix/.local/bin/twitter"
 
 # 只保留最近 2 天内的推文
 MAX_AGE_DAYS = 2
 
 QUERIES = [
     {"query": "AI OR LLM OR GPT OR Claude OR agent OR DeepSeek", "limit": 20},
-    {"query": "#AI #LLM #Claude #GPT", "limit": 10},
+    {"query": "AI agent framework", "limit": 10},
 ]
 
 
 def tweet_id_to_timestamp(tweet_id):
-    """从 X/Twitter Snowflake ID 提取创建时间戳"""
-    try:
-        snowflake = int(tweet_id)
-        timestamp_ms = (snowflake >> 22) + TWITTER_EPOCH_MS
-        return datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
-    except (ValueError, TypeError, OSError):
-        return None
+    """从 createdAtISO 字段解析时间（备用：Snowflake ID）"""
+    return None
 
 
 def is_within_days(tweet_id, days=MAX_AGE_DAYS):
-    """判断推文是否在指定天数内"""
-    created = tweet_id_to_timestamp(tweet_id)
-    if not created:
-        return True  # 无法解析时间则保留
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    return created >= cutoff
+    """判断推文是否在指定天数内（通过 tweet dict 的 createdAtISO 判断，在 main 中处理）"""
+    return True
 
 
 def load_excluded_users():
@@ -53,8 +41,9 @@ def load_excluded_users():
 def fetch_search(query, limit, timeout=60):
     try:
         result = subprocess.run(
-            [OPENCLI, "twitter", "search", "--query", query,
-             "--limit", str(limit), "-f", "json"],
+            [TWITTER_CLI, "search", query,
+             "--type", "top", "--lang", "en",
+             "--max", str(limit), "--json"],
             capture_output=True, text=True, timeout=timeout,
         )
         if result.returncode != 0 or not result.stdout.strip():
@@ -72,28 +61,25 @@ def fetch_search(query, limit, timeout=60):
 
 
 def parse_tweet(t):
-    # opencli 返回扁平结构：author 是字符串，likes/views 是数字或字符串
+    # twitter CLI 返回嵌套结构：author 是 dict，metrics 是 dict，有 createdAtISO
     if isinstance(t, str):
         return None
-    author = t.get("author", "")
+    author = t.get("author", {})
     if isinstance(author, dict):
         author_name = author.get("name", "")
         author_screen = author.get("screenName", author.get("username", ""))
     else:
         author_name = ""
         author_screen = str(author)
-    likes = _to_int(t.get("likes", 0))
-    retweets = _to_int(t.get("retweets", 0))
-    replies = _to_int(t.get("replies", 0))
-    views = _to_int(t.get("views", 0))
+    metrics = t.get("metrics", {})
+    likes = _to_int(metrics.get("likes", 0))
+    retweets = _to_int(metrics.get("retweets", 0))
+    replies = _to_int(metrics.get("replies", 0))
+    views = _to_int(metrics.get("views", 0))
     engagement_score = likes + retweets * 2 + replies
-    # 从 Snowflake ID 解析时间（opencli 不返回时间字段）
-    created_at = ""
+    # twitter CLI 直接提供时间字段
+    created_at = t.get("createdAtISO", t.get("createdAt", ""))
     tweet_id = t.get("id", "")
-    if tweet_id:
-        ts = tweet_id_to_timestamp(tweet_id)
-        if ts:
-            created_at = ts.strftime("%Y-%m-%dT%H:%M:%SZ")
     return {
         "id": tweet_id,
         "text": t.get("text", "").replace("\n", " ").replace("\r", " "),
@@ -144,9 +130,16 @@ def main():
             tweet = parse_tweet(t)
             if not tweet or not tweet["id"]:
                 continue
-            # 只保留最近 2 天内的推文
-            if not is_within_days(tweet["id"]):
-                continue
+            # 只保留最近 2 天内的推文（用 createdAtISO 判断）
+            created_at = tweet.get("created_at", "")
+            if created_at:
+                try:
+                    dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                    cutoff = datetime.now(timezone.utc) - timedelta(days=MAX_AGE_DAYS)
+                    if dt < cutoff:
+                        continue
+                except (ValueError, OSError):
+                    pass
             all_tweets.append(tweet)
 
     if not all_tweets:

@@ -221,11 +221,15 @@ python3 scripts/collect_v2.py <URL> --output-dir ~/Desktop/my_news
 
 ## 支持的来源
 
-| 来源类型 | 自动识别 | 支持内容 | NotebookLM |
-|---------|---------|---------|-----------|
-| 微信公众号 | ✅ | 标题、作者、发布时间、正文 | ✅ |
-| 普通网页 | ✅ | 标题、正文 | ✅ |
-| Twitter/X | ✅ | 标题、作者、正文 | ✅ |
+| 来源类型 | 自动识别 | 支持内容 | NotebookLM | IMA |
+|---------|---------|---------|-----------|-----|
+| 微信公众号 | ✅ | 标题、作者、发布时间、正文 | ✅ | ✅ |
+| 普通网页 | ✅ | 标题、正文 | ✅ | ✅ |
+| Twitter/X 推文 | ✅ | 标题、作者、正文、互动数据 | ✅ | ❌ |
+| X Article 长文 | ✅ | 完整长文标题、正文、作者、互动数据 | ✅ | ❌ |
+| 飞书文档 | ✅ | 标题、正文 | ✅ | ✅ |
+
+> ⚠️ IMA 无法解析 X/Twitter 页面（返回 ret_code 220001），Twitter 相关 URL 已自动跳过 IMA 导入。
 
 ## 配置
 
@@ -234,8 +238,11 @@ python3 scripts/collect_v2.py <URL> --output-dir ~/Desktop/my_news
 默认使用 Python 3.14 版本的 NotebookLM：
 ```python
 NOTEBOOKLM = "/opt/homebrew/bin/python3.14 -m notebooklm"
+NOTEBOOK_ID = "87c6e099-77f1-4727-8d82-92ac00e29cf7"  # "AI 资讯" notebook
 NOTEBOOK_NAME = "AI 资讯"
 ```
+
+> ⚠️ **始终使用 NOTEBOOK_ID 而非 NOTEBOOK_NAME**。名称匹配经常返回 `No notebook found`，且 `notebooklm list` 输出的 ID 可能被截断导致 `account-routing mismatch` 错误。硬编码完整 ID 是最可靠的方式。
 
 首次使用前请确保已完成 NotebookLM 认证：
 ```bash
@@ -254,6 +261,8 @@ WEBHOOK_URL = "https://www.feishu.cn/flow/api/trigger-webhook/4ebcdc4fd26c38187f
 - `summary`: 生成的摘要（由大模型生成）
 
 ### IMA 知识库配置
+
+IMA OpenAPI 只支持 **URL 导入**（`/openapi/wiki/v1/import_urls`），不支持本地文件上传。IMA 无法解析 X/Twitter 页面（返回 ret_code 220001），代码中已自动排除 Twitter URL。支持的来源：公众号、飞书文档、通用网页等公网可访问 URL。
 
 ```python
 IMA_KB_ID = "AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ="
@@ -285,7 +294,7 @@ IMA_API_BASE = "https://ima.qq.com"
 5. **生成格式** - 根据参数生成报告/思维导图/PPT/播客/Quiz
 6. **下载文件** - 下载生成的文件到 `/tmp/news-collect_output`
 7. **推送飞书** - 推送摘要到飞书 webhook
-8. **添加 IMA** - 添加微信文章到 IMA 知识库
+8. **添加 IMA** - 添加文章 URL 到 IMA 知识库（所有公网 URL 均尝试）
 
 ### 标准流程（默认全量分发）
 
@@ -294,7 +303,7 @@ IMA_API_BASE = "https://ima.qq.com"
 3. **创建 Markdown**
 4. **上传 NotebookLM**
 5. **推送飞书**
-6. **添加 IMA**
+6. **添加 IMA**（公众号 / 飞书文档 / 通用 URL；X/Twitter 自动跳过）
 
 > ⚠️ Wiki 同步已从收集流程中移除，改为每日例行维护任务（21:00）统一批量同步。
 
@@ -336,6 +345,15 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 
 ## 常见问题与解决方案
 
+### NotebookLM 上传失败后怎么办？
+
+白天采集时 NotebookLM 上传失败（网络抖动、认证过期等）**无需手动干预**。每日 21:00 的「例行维护」cron 任务（job_id: `60bbd91f0554`）包含维护项 4「NotebookLM 补传失败文章」，会自动：
+1. 对比本地 raw 文章与 NotebookLM 已上传列表
+2. 补传所有遗漏文章（中文文件名自动转 ASCII 临时文件名）
+3. 失败重试 2 次
+
+如连续多次失败，可能是认证过期，需手动执行 `/opt/homebrew/bin/python3.14 -m notebooklm login`。
+
 ### 飞书 Wiki 链接抓取不完整
 
 `collect_v2.py` 对飞书 Wiki 链接（`my.feishu.cn/wiki/` 或 `waytoagi.feishu.cn/wiki/`）可能抓取不完整（需要登录态），表现为文件只有十几行、标题为"未知标题"。
@@ -346,7 +364,54 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 3. 手动重建 markdown 文件（带标准 frontmatter：标题、来源、摘要、正文）
 4. NotebookLM 上传时，中文文件名可能导致失败，需先 `cp` 为 ASCII 文件名再上传
 
-### NotebookLM 上传失败
+### X/Twitter 抓取
+
+`collect_v2.py` 使用 twitter CLI（`/Users/felix/.local/bin/twitter`）抓取 X 内容，支持普通推文和 X Article 长文。
+
+**支持的 URL 格式**：
+- `https://x.com/<user>/status/<id>` — 普通推文
+- `https://x.com/i/article/<id>` — X Article 长文链接
+
+**Article 长文**：twitter CLI 返回的 JSON 中包含 `articleTitle` 和 `articleText` 字段，脚本自动检测并使用完整长文内容（可达 10000+ 字符）作为正文，标题使用 `articleTitle`。
+
+**普通推文**：使用 `text` 字段作为正文，标题格式为 `@<screenName> 的推文`。
+
+**附加信息**：正文末尾自动追加互动数据（❤️ likes / 🔁 retweets / 👁 views / 🔖 bookmarks）。
+
+**作者格式**：`Name (@screenName)`。
+
+**时间解析**：优先使用 `createdAtISO`（ISO 格式自动转本地时区），回退到 `createdAt`（Unix 时间戳）。
+
+**已知限制**：
+- twitter CLI 偶尔超时（已设 60s 超时），重跑即可
+- 推文不存在或不可访问时返回明确错误
+- twitter CLI 不稳定（用户要求不替换为 opencli），如超时可重试
+
+**twitter CLI 数据结构**（供手动调试）：
+```bash
+/Users/felix/.local/bin/twitter tweet <URL> --json
+```
+关键字段：`author.screenName`、`author.name`、`text`、`createdAtISO`、`articleTitle`（可选）、`articleText`（可选）、`metrics.likes/retweets/views/bookmarks`。返回 `{"ok": true, "data": [tweet, ...]}`，第一条为主推文。
+
+### NotebookLM `--notebook` 名称匹配失败
+
+`notebooklm source add --notebook "AI 资讯"` 或 `notebooklm source list --notebook "AI 资讯"` 可能返回 `No notebook found starting with 'AI 资讯'`，即使笔记本确实存在。
+
+**解决**：使用完整 notebook ID 而非名称。ID 为 `87c6e099-77f1-4727-8d82-92ac00e29cf7`。
+
+```bash
+# ❌ 不可靠 — 经常失败
+notebooklm source list --notebook "AI 资讯"
+
+# ✅ 可靠 — 始终使用完整 ID
+notebooklm source list --notebook "87c6e099-77f1-4727-8d82-92ac00e29cf7"
+```
+
+**注意**：`notebooklm list` 输出的 ID 可能被终端截断（如 `87c6e099-77f1-4727-8d82`），使用截断 ID 会导致 `account-routing mismatch` RPC 错误。
+
+### NotebookLM 上传失败（综合）
+
+NotebookLM 上传有约 20-30% 的偶发失败率（空错误信息），脚本已内置自动重试（3次，递增等待 3s/6s）。即使重试后仍失败的文章，**不需要立即手动补传**——每日 21:00 例行维护 cron 任务（job_id: 60bbd91f0554）的「维护项 4：NotebookLM 补传失败文章」会自动检测并补传当日遗漏。
 
 **原因1：Google 认证过期**（最常见）
 
@@ -355,6 +420,8 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 诊断：`/opt/homebrew/bin/python3.14 -m notebooklm doctor` 确认 auth 状态。
 
 修复：`/opt/homebrew/bin/python3.14 -m notebooklm login`（需浏览器交互）。
+
+**原因2：中文文件名 + 特殊字符**
 
 **原因2：中文文件名**
 
@@ -378,6 +445,12 @@ news-collect/
 ```
 
 ## 更新日志
+
+### v2.1 (2026-05-09)
+- 🔧 改进：X/Twitter 抓取全面优化 — 使用完整路径 `/Users/felix/.local/bin/twitter`，支持 X Article 长文（`articleTitle`/`articleText`），修正字段名（`screenName`），使用 `createdAtISO` 时间解析，附加互动数据
+- 🆕 新增：`is_twitter_url` 支持 `/i/article/` 长文链接匹配
+- 🔧 改进：超时从 30s 增加到 60s，增加空列表保护和 JSON 解析错误捕获
+- 🔧 改进：IMA 知识库移除公众号限制（公众号、飞书文档、通用 URL 均可导入），但排除 X/Twitter（IMA 无法解析其页面）
 
 ### v2.0 (2026-04-20)
 - ✨ 新增：NotebookLM 深度集成
