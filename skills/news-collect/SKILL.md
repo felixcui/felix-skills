@@ -307,6 +307,14 @@ IMA_API_BASE = "https://ima.qq.com"
 
 > ⚠️ Wiki 同步已从收集流程中移除，改为每日例行维护任务（21:00）统一批量同步。
 
+### 摘要引擎失败与降级
+
+GLM API 偶发返回 `None` 导致 `TypeError: object of type 'NoneType' has no len()` 错误。此时需用 `--summary-engine rule` 重跑：
+
+```bash
+python3 scripts/collect_v2.py <URL> --summary-engine rule
+```
+
 ### 摘要引擎认证失败
 
 脚本的摘要引擎动态读取 `~/.hermes/config.yaml` 中的模型配置：
@@ -392,6 +400,16 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 /Users/felix/.local/bin/twitter tweet <URL> --json
 ```
 关键字段：`author.screenName`、`author.name`、`text`、`createdAtISO`、`articleTitle`（可选）、`articleText`（可选）、`metrics.likes/retweets/views/bookmarks`。返回 `{"ok": true, "data": [tweet, ...]}`，第一条为主推文。
+
+**IMA 认证调试**：IMA API 使用自定义 header `ima-openapi-clientid` 和 `ima-openapi-apikey`（非标准 `X-Api-Key` / `X-Client-Id`）。验证 API 可用性时用空 URL 列表测试：
+```bash
+curl -s -X POST "https://ima.qq.com/openapi/wiki/v1/import_urls" \
+  -H "Content-Type: application/json" \
+  -H "ima-openapi-clientid: $(cat ~/.config/ima/client_id)" \
+  -H "ima-openapi-apikey: $(cat ~/.config/ima/api_key)" \
+  -d '{"knowledge_base_id":"AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ=","urls":[]}'
+```
+返回 `code:51`（URL 列表不能为空）= 认证正常。返回 `code:200002` = header 名错误。
 
 ### NotebookLM `--notebook` 名称匹配失败
 

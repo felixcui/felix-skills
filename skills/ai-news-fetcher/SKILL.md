@@ -246,7 +246,17 @@ media_id = client.create_draft(
 - `baoyu-markdown-to-html`：`~/work/skills/baoyu-skills/skills/baoyu-markdown-to-html/scripts/main.ts`
 - `.env` 归档备份：`~/.hermes/skills/.archive/ai-news-fetcher/.env`（首次执行需复制到 `scripts/`）
 
+## ⚠️ 用户偏好：不精选，全部输出
+
+发布到微信公众号时，**所有抓取到的资讯必须全部保留**。LLM 仅用于智能分类和重要性排序，不能筛选/精选/删减文章数量。
+
 ## 已知问题 / Pitfalls
+
+### ⚠️ 智谱 API 不稳定（glm-5-turbo）
+
+`.env` 配置的智谱 API 经常超时（120s+ 无响应），无论是用于 `method="ai"` 分类还是二次排序。
+
+**推荐方案**：用 hongmacc API（`gpt-5.4-mini`，从 `~/.hermes/config.yaml` 的 `custom_providers` 读取）做 LLM 排序，比智谱 API 稳定得多（~20s 完成）。
 
 ### ⚠️ GLM API 超时保护
 
@@ -266,6 +276,10 @@ media_id = client.create_draft(
 脚本通过 `ScriptDir.parent / ".env"` 定位 `.env` 文件（其中 `ScriptDir = scripts/ai-news-fetcher/`），因此 `.env` 必须放在 `scripts/` 目录下，**不是** `scripts/ai-news-fetcher/`。
 
 归档备份位置：`~/.hermes/skills/.archive/ai-news-fetcher/.env`
+
+### ⚠️ `.env` 中 OPENAI_BASE_URL 问题
+
+`OPENAI_BASE_URL= https://open.bigmodel.cn/api/coding/paas/v4` 值前有多余空格，且 `coding/paas/v4` 是编码专用端点（可能返回空响应）。标准端点为 `https://open.bigmodel.cn/api/paas/v4`。读取时需 `.strip()` 处理空格。
 
 ### ⚠️ `execute_code` 必须用于 cron job
 
