@@ -188,7 +188,7 @@ spec = importlib.util.spec_from_file_location("fetch_ai_news", str(fetch_script)
 fetch_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fetch_module)
 
-# 默认使用大模型分类（已设置 30s 超时，失败自动降级为关键词分类）
+# 默认使用大模型分类（已设置 60s 超时，失败自动降级为关键词分类）
 markdown_content = fetch_module.get_news_summary(days=1, classify=True, method="ai")
 ```
 
@@ -265,9 +265,10 @@ media_id = client.create_draft(
 | 模式 | 表现 | 影响 |
 |------|------|------|
 | **限流（429）** | 返回 `Error code: 429`，脚本自动降级为关键词分类 | 无害，降级自动发生 |
-| **挂起超时** | API 无响应，OpenAI client 在 30 秒后超时，脚本自动降级为关键词分类 | 无害，降级自动发生 |
+| **挂起超时** | API 无响应，OpenAI client 在 60 秒后超时，脚本自动降级为关键词分类 | 无害，降级自动发生 |
+| **摘要质量差** | GLM 返回分析过程（如 "1. Analyze the Request..."）而非正式摘要 | 摘要不可用，需降级为规则引擎 |
 
-**默认使用 `method="ai"`（大模型分类），已设置 30 秒超时保护，失败自动降级为关键词分类。**
+**默认使用 `method="ai"`（大模型分类），已设置 60 秒超时保护（`httpx.Timeout(60.0, connect=10.0)`），失败自动降级为关键词分类。**
 - `method="ai"` 使用 OpenAI 兼容 API 进行智能分类，超时或失败时自动降级
 - `method="rule"` 仅用纯关键词分类，可在 AI API 不可用时手动指定
 

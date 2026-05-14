@@ -372,6 +372,21 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 3. 手动重建 markdown 文件（带标准 frontmatter：标题、来源、摘要、正文）
 4. NotebookLM 上传时，中文文件名可能导致失败，需先 `cp` 为 ASCII 文件名再上传
 
+### 微信文章反爬（requests 抓取失败）
+
+部分微信公众号文章会被反爬保护拦截，`requests+BeautifulSoup` 抓取后返回"未知标题"/"未知作者"，正文为页面底部交互元素（点赞、在看等）。
+
+**诊断信号**：`collect_v2.py` 输出 `✅ 抓取成功: 未知标题`，GLM 摘要判断"无实质性文章内容"。
+
+**修复流程**（浏览器辅助抓取）：
+1. 用 `browser_navigate` 打开文章 URL
+2. 用 `browser_snapshot(full=True)` 获取完整页面快照
+3. 从快照中提取标题（`heading` 元素）、作者、正文（`StaticText` 节点拼接）
+4. 手动构建 Markdown（含 frontmatter），保存到 `~/work/github/media-conent/raw/`
+5. 用 `requests` 分别推送飞书 webhook、NotebookLM（`notebooklm source add`）、IMA（`/openapi/wiki/v1/import_urls`）
+
+**注意**：这种情况较少见（约 5-10% 的公众号文章），大部分文章 requests 可正常抓取。无需为此改动 `collect_v2.py` 的默认抓取逻辑。
+
 ### X/Twitter 抓取
 
 `collect_v2.py` 使用 twitter CLI（`/Users/felix/.local/bin/twitter`）抓取 X 内容，支持普通推文和 X Article 长文。
@@ -426,6 +441,20 @@ notebooklm source list --notebook "87c6e099-77f1-4727-8d82-92ac00e29cf7"
 ```
 
 **注意**：`notebooklm list` 输出的 ID 可能被终端截断（如 `87c6e099-77f1-4727-8d82`），使用截断 ID 会导致 `account-routing mismatch` RPC 错误。
+
+### 微信公众号反爬导致抓取失败（"未知标题"）
+
+部分微信公众号文章使用反爬机制，requests+BeautifulSoup 抓取时返回"未知标题"/"未知作者"，GLM 摘要判断为"无实质性文章内容"。此时需要浏览器辅助抓取：
+
+**诊断**：脚本输出 `✅ 抓取成功: 未知标题` 或 GLM 摘要说"只是社交平台界面交互提示语"。
+
+**修复流程**：
+1. 用 `browser_navigate` 打开 URL，获取完整页面快照
+2. 从快照中提取标题、作者、正文内容
+3. 手动构建 Markdown 文件（含 frontmatter）
+4. 用 `requests.post` 推送飞书 webhook、`terminal()` 调 NotebookLM CLI、`requests.post` 调 IMA API
+
+**注意**：这不是所有微信文章都会触发，只有部分有反爬保护的文章。大多数情况下 `collect_v2.py` 能正常抓取。
 
 ### NotebookLM 上传失败（综合）
 
