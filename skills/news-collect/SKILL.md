@@ -486,7 +486,6 @@ news-collect/
 ├── SKILL.md                    # 技能文档
 └── scripts/
     ├── collect_v2.py            # ⭐ V2 主脚本（增强版）
-    ├── collect.py                # V1 原版（保留兼容）
     ├── fetch_feishu_wiki.py     # 飞书 Wiki 抓取辅助
     └── fetch_content.py          # 旧版（保留兼容）
 ```

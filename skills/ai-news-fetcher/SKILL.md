@@ -33,7 +33,6 @@ ai-news-fetcher/                                        # skill 根目录
 ├── .env                                                 # 环境变量（需从 .archive 复制）
 ├── scripts/
 │   ├── fetch_ai_news.py                # 资讯获取与智能分类（核心脚本）
-│   ├── fetch_ai_news_v4.py             # 纯关键词分类版（无AI API依赖）
 │   ├── publish_to_wechat.py            # 微信公众号发布（统一发布器）
 │   ├── publish_to_wechat_daily.sh      # 每日定时发布脚本
 │   └── send_ai_news.sh                 # 获取资讯并输出
