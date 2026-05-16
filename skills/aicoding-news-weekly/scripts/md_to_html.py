@@ -73,7 +73,7 @@ h3 {
     font-size: 17px;
     font-weight: bold;
     color: #333;
-    margin: 16px 0 8px;
+    margin: 16px 0 0;
 }
 
 h4 {
@@ -401,7 +401,7 @@ class MarkdownToWechat:
                 'font-size:19px;font-weight:bold;color:#000;'
                 'margin:20px 0 10px;padding-left:8px;border-left:3px solid #3f51b5;'
             ),
-            'h3': 'font-size:17px;font-weight:bold;color:#333;margin:16px 0 8px;',
+            'h3': 'font-size:17px;font-weight:bold;color:#333;margin:16px 0 0;',
             'h4': 'font-size:15px;font-weight:bold;color:#555;margin:14px 0 6px;',
             'p':  'margin:10px 0;text-align:justify;word-wrap:break-word;',
             'a':  'color:#3f51b5;text-decoration:none;',

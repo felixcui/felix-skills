@@ -423,11 +423,11 @@ if __name__ == "__main__":
                     url = item['url']
                     description = item.get('description', '') or ''
                     
-                    print(f"### [{title}]({url})\n")
+                    print(f"### [{title}]({url})")
                     if description:
                         print(f"{description}\n")
                     else:
-                        print("\n")
+                        print()
                 
                 # Add separator if it's not the last category
                 #if idx < len(sorted_categories) - 1:
@@ -435,7 +435,7 @@ if __name__ == "__main__":
 
             print('---')
             print('![](https://files.mdnice.com/user/121853/1b369e9c-c1fa-490b-a10e-a9eb803177cf.png)')
-            print('- [AICoding 基地: ai-coding-base.vercel.app (工具动态，编程实践，编程模型，业界观点)')
+            print('- [AICoding 基地: https://devmaster.cn/ (工具动态，编程实践，编程模型，业界观点)')
             print('- 专为开发者打造的一站式 AI 编程情报站。这里汇聚了最前沿的 AI 编程工具、编程资讯和模型动态及深度实战案例等，旨在帮助每一位开发者跨越技术周期，掌握 AI开发核心生产力，提升开发效率。')
             
             # 输出标题，格式: AI Coding资讯周报-2026.02.07
