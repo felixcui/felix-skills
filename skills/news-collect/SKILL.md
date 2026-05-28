@@ -372,6 +372,25 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 3. 手动重建 markdown 文件（带标准 frontmatter：标题、来源、摘要、正文）
 4. NotebookLM 上传时，中文文件名可能导致失败，需先 `cp` 为 ASCII 文件名再上传
 
+### 微信文章抓取失败：页面过大（defuddle 限制）
+
+部分超长微信公众号文章（如 5 万字级别的深度教程）页面大小超过 defuddle 的 5MB 限制，抓取阶段直接报错：
+
+```
+❌ 抓取失败: defuddle 调用失败: Error: Page too large (6MB, max 5MB)
+```
+
+**诊断信号**：`collect_v2.py` 在 `[1/5] 抓取内容...` 阶段失败，错误信息含 `Page too large`。
+
+**注意**：`--summary-engine rule` 无法绕过此问题，因为失败发生在抓取阶段而非摘要阶段。
+
+**修复流程**（浏览器辅助抓取）：
+1. 用 `browser_navigate` 打开文章 URL
+2. 用 `browser_snapshot(full=True)` 获取完整页面快照
+3. 从快照中提取标题、作者、正文
+4. 手动构建 Markdown（含 frontmatter），保存到 `~/work/github/media-conent/raw/`
+5. 用 `execute_code` 并行完成：飞书 webhook 推送、NotebookLM 上传（ASCII 文件名）、IMA 导入
+
 ### 微信文章反爬（requests 抓取失败）
 
 部分微信公众号文章会被反爬保护拦截，`requests+BeautifulSoup` 抓取后返回"未知标题"/"未知作者"，正文为页面底部交互元素（点赞、在看等）。
