@@ -309,7 +309,16 @@ IMA_API_BASE = "https://ima.qq.com"
 
 ### 摘要引擎失败与降级
 
-GLM API 偶发返回 `None` 导致 `TypeError: object of type 'NoneType' has no len()` 错误。此时需用 `--summary-engine rule` 重跑：
+GLM API 有两种已知故障模式：
+
+| 故障 | 症状 | 频率 |
+|------|------|------|
+| 返回 `None` | `TypeError: object of type 'NoneType' has no len()` | 偶发 |
+| 输出分析过程 | `⚠️ GLM 输出了分析过程而非摘要，使用规则生成...` | **高频**（~60% 的请求） |
+
+第二种模式下，GLM 返回的不是摘要文本而是推理/分析过程（如"让我分析一下这篇文章…"），脚本检测后自动降级为规则引擎。这是目前最常见的降级原因，说明 GLM 对摘要 prompt 的指令遵从不够稳定。
+
+**无需手动干预**——脚本已内置自动降级。如需强制使用规则引擎：
 
 ```bash
 python3 scripts/collect_v2.py <URL> --summary-engine rule
@@ -390,6 +399,26 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 3. 从快照中提取标题、作者、正文
 4. 手动构建 Markdown（含 frontmatter），保存到 `~/work/github/media-conent/raw/`
 5. 用 `execute_code` 并行完成：飞书 webhook 推送、NotebookLM 上传（ASCII 文件名）、IMA 导入
+
+### 规则摘要降级时的噪声问题（已修复）
+
+GLM 降级到规则提取时，微信文章正文开头常含作者行（`作者｜Li Yuan`）、编辑行（`编辑｜郑玄`）等元数据，过去会被直接纳入摘要。
+
+**v2.2 修复**：新增 `_clean_content_for_summary()` 函数，在规则提取前先清洗正文：
+
+1. **行级过滤**：跳过纯名字行（如 `Li Yuan Li Yuan`）、短元数据行（<80字符的作者/编辑行）、阅读器交互文本（`在小说阅读器读本章`）、图片链接、emoji 行
+2. **智能保留**：长的元数据+正文混合行（≥80字符）只清除标记部分，不丢弃正文内容
+3. **行内清洗**：去除 markdown 格式标记、残留的 `作者｜xxx 编辑｜xxx` 标记
+4. **参数优化**：intro 区域从 500 扩大到 800 字符，句子长度限制从 20-150 放宽到 15-200，补充更多句子到摘要
+
+**降级链路**：当前为 GLM → rule（hongmacc 作为中间降级尚未实现，需手动时可用 `--summary-engine rule`）。
+
+**手动修复已有错误摘要**：如果摘要已经推送到飞书且有问题，可用 hongmacc 重新生成摘要并更新 Markdown + 重新推送 webhook：
+
+```python
+# 从 ~/.hermes/config.yaml 的 custom_providers[0] 读取 hongmacc 配置
+# base_url: https://hongmacc.com/v1, model: gpt-5.4-mini
+```
 
 ### 微信文章反爬（requests 抓取失败）
 
@@ -555,6 +584,11 @@ news-collect/
 ```
 
 ## 更新日志
+
+### v2.2 (2026-05-29)
+- 🔧 改进：规则摘要引擎噪声清洗 — 新增 `_clean_content_for_summary()` 函数，过滤作者/编辑行、纯名字行、阅读器交互文本、图片链接、emoji 行等噪声
+- 🔧 改进：规则摘要支持行内清洗 — 长"元数据+正文"混合行只去除标记部分，不丢弃正文
+- 🔧 改进：规则摘要参数优化 — intro 区域 500→800 字符，句子长度 20-150→15-200，补充更多句子到摘要
 
 ### v2.1 (2026-05-09)
 - 🔧 改进：X/Twitter 抓取全面优化 — 使用完整路径 `/Users/felix/.local/bin/twitter`，支持 X Article 长文（`articleTitle`/`articleText`），修正字段名（`screenName`），使用 `createdAtISO` 时间解析，附加互动数据

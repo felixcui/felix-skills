@@ -480,25 +480,88 @@ def generate_summary_with_llm(content, title="", max_length=200, engine="glm"):
         return generate_summary_with_glm(content, title, max_length)
 
 
+def _clean_content_for_summary(content):
+    """清洗正文内容，去除作者行、编辑行、格式标记等噪声"""
+    if not content:
+        return ""
+    
+    lines = content.split('\n')
+    cleaned_lines = []
+    
+    # 需要跳过的噪声模式
+    noise_patterns = [
+        # 作者/编辑行：** 作者｜xxx** / **编辑｜ **xxx****（仅匹配短行，长行做行内清洗）
+        # 图片链接
+        r'^!\[.*?\]\(.*?\)$',
+        # 空行/纯空白
+        r'^\s*$',
+        # 阅读器交互文本："在小说阅读器读本章" / "去阅读"
+        r'^(在.*阅读器|去阅读|展开全文|阅读原文|点击阅读)',
+        # 微信公众号底部交互元素
+        r'^(赞|在看|分享|收藏|喜欢|打赏|投诉|举报)',
+        # 纯 emoji 行
+        r'^[\s]*[🦞📝🛠️💡🔥⭐✨✅❌📌🎯📊💪⚡🌟💎🎁❤️👇🎉🏆💬🔔🔗📱💻🔍📈🎁🤖]+[\s]*$',
+    ]
+    
+    # 短元数据行模式（作者/编辑/来源行，长度<80才整行跳过）
+    metadata_line_pattern = r'^[\s]*\*{0,2}\s*(作者|编辑|来源|出处)\s*[｜|:：]'
+    # 纯名字行（如 "Li Yuan Li Yuan"）
+    name_line_pattern = r'^[\s]*[A-Za-z]+(\s+[A-Za-z]+)+\s*$'
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # 跳过匹配通用噪声模式的行
+        if any(re.match(p, line) for p in noise_patterns):
+            continue
+        # 跳过纯名字行（如 "Li Yuan Li Yuan"）
+        if re.match(name_line_pattern, line):
+            continue
+        # 跳过短的元数据行（纯作者/编辑/来源信息，<80字符），长行保留做行内清洗
+        if re.match(metadata_line_pattern, line) and len(line) < 80:
+            continue
+        cleaned_lines.append(line)
+    
+    text = '\n'.join(cleaned_lines)
+    
+    # 去除 markdown 加粗/格式标记
+    text = re.sub(r'\*{2,}', '', text)
+    text = re.sub(r'#{1,6}\s*', '', text)
+    text = re.sub(r'!\[.*?\]\(.*?\)', '', text)  # 内联图片
+    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)  # 链接保留文字
+    
+    # 去除行内残留的作者/编辑标记（如 "作者｜Li Yuan 编辑｜ 郑玄"）
+    text = re.sub(r'(作者|编辑|来源|出处)\s*[｜|:：]\s*[\w\s\.]+?(?=\s*(?:作者|编辑|来源|出处)|[，。！？\n]|$)', '', text)
+    
+    # 压缩连续空白
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r'[ \t]+', ' ', text)
+    
+    return text.strip()
+
+
 def generate_summary_rule_based(content, title="", max_length=200):
     """基于规则生成文章摘要"""
     if not content:
         return ""
     
-    content = content.strip()
+    # 先清洗噪声
+    content = _clean_content_for_summary(content)
+    
     content = re.sub(r'\s+', ' ', content)
     content = re.sub(r'[🦞📝🛠️💡🔥⭐✨✅❌📌🎯📊💪⚡🌟💎🎁❤️👇📌]', '', content)
     
     # 优先从文章开头提取关键信息（通常包含核心观点）
-    intro_section = content[:500] if len(content) > 500 else content
+    intro_section = content[:800] if len(content) > 800 else content
     
     # 从文章开头提取关键句子（通常包含核心观点）
     intro_sentences = re.split(r'[。！？\n]', intro_section)
-    intro_sentences = [s.strip() for s in intro_sentences if len(s.strip()) > 20 and len(s.strip()) < 150]
+    intro_sentences = [s.strip() for s in intro_sentences if len(s.strip()) > 15 and len(s.strip()) < 200]
     
     # 从全文提取句子
     sentences = re.split(r'[。！？\n]', content)
-    sentences = [s.strip() for s in sentences if len(s.strip()) > 20 and len(s.strip()) < 150]
+    sentences = [s.strip() for s in sentences if len(s.strip()) > 15 and len(s.strip()) < 200]
     
     # 过滤掉代码、命令行、URL、指令等
     filtered_sentences = []
@@ -506,6 +569,7 @@ def generate_summary_rule_based(content, title="", max_length=200):
         r'^```', r'^python', r'^npm', r'^\$', r'^>', r'^https?://',
         r'^/', r'^\[', r'^\d+\.', r'^[-\*\+#]',  # 过滤 markdown 格式
         r'^(请|建议|注意|提示|警告)',  # 过滤指令性文字
+        r'^(作者|编辑|来源)[｜|:：]',  # 过滤残留的作者/编辑标记
     ]
     
     for sent in sentences:
@@ -514,11 +578,14 @@ def generate_summary_rule_based(content, title="", max_length=200):
         # 过滤纯数字或纯符号
         if re.match(r'^[\d\s\W]+$', sent):
             continue
+        # 过滤过短的纯人名（如 "Li Yuan"）
+        if re.match(r'^[A-Za-z]+(\s[A-Za-z]+)+$', sent) and len(sent) < 30:
+            continue
         filtered_sentences.append(sent)
     
     # 关键句识别（优先级排序）
     key_patterns = [
-        r'(本文|文章|作者|指出|认为|表示|介绍|分享|讲解|说明|阐述)',
+        r'(本文|文章|指出|认为|表示|介绍|分享|讲解|说明|阐述)',
         r'(核心|关键|要点|重点|本质|实质)',
         r'(总结|结论|建议|启示|意义|价值)',
     ]
@@ -527,7 +594,7 @@ def generate_summary_rule_based(content, title="", max_length=200):
     normal_sentences = []
     
     # 优先使用开头的句子
-    for sent in intro_sentences[:5]:
+    for sent in intro_sentences[:8]:
         is_key = any(re.search(pattern, sent) for pattern in key_patterns)
         if is_key:
             key_sentences.append(sent)
@@ -535,11 +602,11 @@ def generate_summary_rule_based(content, title="", max_length=200):
             normal_sentences.append(sent)
     
     # 再从全文中找关键句
-    for sent in filtered_sentences[:20]:
-        if sent in intro_sentences[:5]:
+    for sent in filtered_sentences[:30]:
+        if sent in intro_sentences[:8]:
             continue
         is_key = any(re.search(pattern, sent) for pattern in key_patterns)
-        if is_key and len(sent) > 30:
+        if is_key and len(sent) > 25:
             key_sentences.append(sent)
     
     # 构建摘要
@@ -549,10 +616,10 @@ def generate_summary_rule_based(content, title="", max_length=200):
     if key_sentences:
         summary_parts.extend(key_sentences[:3])
     
-    # 如果还不够，补充普通句子
-    if len(''.join(summary_parts)) < 100 and normal_sentences:
-        for sent in normal_sentences[:2]:
-            if len(''.join(summary_parts)) + len(sent) < max_length - 10:
+    # 补充普通句子直到接近 max_length
+    if normal_sentences:
+        for sent in normal_sentences[:5]:
+            if len(''.join(summary_parts)) + len(sent) < max_length - 5:
                 summary_parts.append(sent)
     
     summary = '。'.join(summary_parts)
