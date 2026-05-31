@@ -533,7 +533,18 @@ cp "中文文件名.md" /tmp/english-name.md
 
 **处理**：等几秒重试即可。不要误判为认证过期去跑 `login`。连续 3+ 次失败再考虑 `login`。
 
-**原因4：笔记本 source 数量达到上限（`Failed to get SOURCE_ID from registration response`）**
+**原因4：Google 账号路由冲突（`status code 5 (Not found)`）**
+
+多 Google 账号登录时，CLI 请求可能路由到错误的账号，导致 RPC 返回 null + status 5。**`notebooklm doctor` 全部通过但操作仍失败**是此问题的特征。
+
+**诊断**：`notebooklm -vv source list` 日志显示 RPC 响应中 result 为 null + status 5。`notebooklm list` 可能正常返回笔记本列表。
+
+**处理**：
+1. 浏览器中登出多余 Google 账号，只保留一个
+2. 临时绕过：尝试另一个 CLI 入口（`/opt/homebrew/bin/notebooklm` vs `/opt/homebrew/bin/python3.14 -m notebooklm`）
+3. 已知 issue：#114、#294
+
+**原因5：笔记本 source 数量达到上限（`Failed to get SOURCE_ID from registration response`）**
 
 当笔记本内 source 数量接近/超过上限（实测 273 个时触发），所有 `source add` 操作会稳定失败，返回 `Failed to get SOURCE_ID from registration response` 或 `RPC ADD_SOURCE failed`。`doctor` 检查全部通过，认证正常。
 

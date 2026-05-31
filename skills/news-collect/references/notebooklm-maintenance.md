@@ -48,6 +48,23 @@ rm /tmp/nb_upload.md
 | 空 `Error:` | 瞬态连接失败 | 等几秒重试 |
 | 持续空 `Error:` | Google 认证过期 | `notebooklm login` |
 | 中文文件名失败 | 特殊字符 | cp 为 ASCII 名再传 |
+| `status code 5 (Not found)` | 账号路由冲突 | 见下方说明 |
+| `Failed to get SOURCE_ID` | Source 数量上限 | 新建笔记本 |
+
+### 账号路由冲突（account routing mismatch）
+
+**症状**：`notebooklm source list`、`notebooklm use <id>`、`notebooklm source add` 均返回 `RPC rLM1Ne returned null result with status code 5 (Not found)`。错误信息提到多 Google 账号登录导致请求路由到错误账号。
+
+**关键特征**：`notebooklm doctor` 全部通过（auth、migration、config 均绿），但实际操作仍失败。`notebooklm list` 可能正常返回笔记本列表，但无法进入具体笔记本。
+
+**诊断**：`notebooklm -vv source list` 日志显示 RPC 成功发出并获得响应，但响应中 result 为 null + status 5。
+
+**已知 issue**：#114、#294（notebooklm CLI 仓库）。
+
+**处理**：
+1. 在浏览器中登出多余的 Google 账号，只保留一个
+2. 或设置 `authuser` 参数指定正确的账号索引（如 profile 配置中设置）
+3. 临时绕过：如果 `/opt/homebrew/bin/notebooklm` 遇到此问题，尝试 `/opt/homebrew/bin/python3.14 -m notebooklm`（反之亦然）
 
 ### 诊断命令
 
@@ -82,8 +99,16 @@ notebooklm source delete "<full-uuid>"
 
 ## 4. 关键 Notebook ID
 
-- **AI 资讯** notebook: `87c6e099-77f1-4727-8d82-92ac00e29cf7`
+- **AI 资讯 V2** notebook: `8c8a9ffe-89c1-4219-a6ee-cd2f9bb4f3e0`（当前使用，旧笔记本 87c6e099 已满 273 sources）
 - 始终使用完整 ID，不要用名称匹配（不可靠）
+
+## 4.1 NotebookLM CLI 路径
+
+系统上有两个 NotebookLM CLI 入口：
+- `/opt/homebrew/bin/python3.14 -m notebooklm` — Python 3.14 模块版本（`collect_v2.py` 使用此路径）
+- `/opt/homebrew/bin/notebooklm` — Homebrew 安装的独立二进制
+
+维护任务中两者均可使用，效果相同。如果其中一个遇到 account routing 问题，可尝试另一个。
 
 ## 5. 实战比对脚本（Python/execute_code）
 
