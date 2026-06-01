@@ -398,7 +398,15 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 2. 用 `browser_snapshot(full=True)` 获取完整页面快照
 3. 从快照中提取标题、作者、正文
 4. 手动构建 Markdown（含 frontmatter），保存到 `~/work/github/media-conent/raw/`
-5. 用 `execute_code` 并行完成：飞书 webhook 推送、NotebookLM 上传（ASCII 文件名）、IMA 导入
+5. **分发步骤**：用 `terminal()` 并行完成飞书 webhook 推送、NotebookLM 上传（ASCII 文件名）、IMA 导入
+
+> ⚠️ **不要用 `execute_code` 做分发步骤**。`execute_code` 会拦截包含 `requests.post` / `subprocess` 调用的 Python 代码（报错："runs arbitrary local Python including subprocess calls that bypass shell-string approval checks"）。改用 3 个并行的 `terminal()` 调用分别完成 webhook curl、notebooklm source add、IMA curl。
+
+**超长文章的浏览器提取技巧**：
+- `browser_snapshot` 的 `full=true` 对 115K+ 字符文章会截断。改用 `browser_console` + `document.getElementById('js_content').innerText.substring(start, end)` 分段提取。
+- 微信公众号文章正文在 `#js_content` 元素中。
+- 提取时先测总长度（`.length`），再分多段提取（每段约 12K 字符），避免单次返回过大。
+- 构建结构化摘要而非全文保存——超长文章的完整正文不适合塞入摘要字段，改用 frontmatter + 分节要点的方式。
 
 ### 规则摘要降级时的噪声问题（已修复）
 
