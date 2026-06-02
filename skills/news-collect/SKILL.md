@@ -471,8 +471,8 @@ GLM 降级到规则提取时，微信文章正文开头常含作者行（`作者
 /Users/felix/.local/bin/twitter tweet <URL> --json
 ```
 关键字段：`author.screenName`、`author.name`、`text`、`createdAtISO`、`articleTitle`（可选）、`articleText`（可选）、`metrics.likes/retweets/views/bookmarks`。返回 `{"ok": true, "data": [tweet, ...]}`，第一条为主推文。
+IMA OpenAPI 使用**非标准 header 名**（不是 `X-Client-Id` / `X-Api-Key`，否则返回 `code:200002`）：
 
-**IMA 认证调试**：IMA API 使用自定义 header `ima-openapi-clientid` 和 `ima-openapi-apikey`（非标准 `X-Api-Key` / `X-Client-Id`）。验证 API 可用性时用空 URL 列表测试：
 ```bash
 curl -s -X POST "https://ima.qq.com/openapi/wiki/v1/import_urls" \
   -H "Content-Type: application/json" \
@@ -569,6 +569,8 @@ cp "中文文件名.md" /tmp/english-name.md
 ### 每日维护：NotebookLM 补传与垃圾清理
 
 > 详细操作模式见 [references/notebooklm-maintenance.md](references/notebooklm-maintenance.md)
+>
+> IMA 知识库健康检查与维护见 [references/ima-maintenance.md](references/ima-maintenance.md)
 
 每日维护 cron (21:00) 除补传外，还应清理 `notebooklm_upload_*`、`upload_b2_*`、`upload_b3_*` 等残留 source。
 
