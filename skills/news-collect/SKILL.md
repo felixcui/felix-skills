@@ -572,7 +572,7 @@ cp "中文文件名.md" /tmp/english-name.md
 >
 > IMA 知识库健康检查与维护见 [references/ima-maintenance.md](references/ima-maintenance.md)
 
-每日维护 cron (21:00) 除补传外，还应清理 `notebooklm_upload_*`、`upload_b2_*`、`upload_b3_*` 等残留 source。
+每日维护 cron (21:00) 除补传外，还应清理 `notebooklm_upload_*`、`upload_b2_*`、`upload_b3_*`、`nb_upload_missing.md` 等残留 source。
 
 **比对本地文章 vs NotebookLM 已有 source：**
 
@@ -598,6 +598,9 @@ notebooklm source delete "<full-uuid-from-error>"
 ```
 news-collect/
 ├── SKILL.md                    # 技能文档
+├── references/
+│   ├── ima-maintenance.md       # IMA 知识库每日维护操作手册
+│   └── notebooklm-maintenance.md # NotebookLM 每日维护操作手册
 └── scripts/
     ├── collect_v2.py            # ⭐ V2 主脚本（增强版）
     ├── fetch_feishu_wiki.py     # 飞书 Wiki 抓取辅助

@@ -199,6 +199,18 @@ if not env_file.exists() and archive_env.exists():
 - 分类结果写 `/tmp/ai_news_wechat_temp.md`（中间结果必须写文件，`terminal()` 不保留变量）
 - 原始新闻列表写 `/tmp/ai_news_raw.json`（Step 3 生成摘要需要）
 
+**`fetch_ai_news.py` 可导入函数（⚠️ 名字与直觉不同，不要猜）：**
+
+| 函数 | 签名 | 返回值 |
+|------|------|--------|
+| `get_raw_news` | `get_raw_news(days=1)` | `list[dict]`（每项含 title, link, biz_name） |
+| `classify_by_keywords` | `classify_by_keywords(news_list)` | `dict[str, list[int]]`（类别→索引列表） |
+| `classify_news_with_ai` | `classify_news_with_ai(news_list)` | 同上（LLM 分类，慢） |
+| `format_news_markdown` | `format_news_markdown(news_list, categories, start_date, end_date, platform="feishu")` | `(markdown_str, filtered_list)` — **注意返回元组** |
+| `get_news_summary` | `get_news_summary(days=1, classify=True, platform="feishu", method="ai")` | `str`（可直接打印的完整 Markdown） |
+
+> **Pitfall**：函数名不遵循常见命名习惯。`get_raw_news` 不是 `fetch_all_news`，`classify_by_keywords` 不是 `classify_news_rule`，`format_news_markdown` 返回元组 `(md, filtered)` 不是单字符串。**先读源码确认函数名再 import，不要凭猜测。**
+
 **Step 2：HTML 转换（`terminal()` + bun）**
 
 ```bash
