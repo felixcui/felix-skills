@@ -338,11 +338,22 @@ model.default    → 模型名称
 
 | 错误 | 原因 | 处理 |
 |------|------|------|
-| `返回错误 (401)` | API key 无效/过期 | key 错误或失效，需更换 |
+| `⚠️ IMA 知识库添加失败: HTTP Error 401: Unauthorized` | API key 无效/过期。**注意**：脚本报告"HTTP 401"，但实际 API 错误码是 `code: 200002, msg: "skill auth failed"` | 更新 `~/.config/ima/api_key` 为有效的 key |
 | `返回错误 (429)` | 速率限制/余额不足 | 充值或等待 |
 | `余额不足` | 账户余额用完 | 到对应平台充值 |
 
-**诊断：** 从 config.yaml 中提取配置并测试：
+**⚠️ 401 误诊提示**：`collect_v2.py` 报告 `HTTP Error 401: Unauthorized`，但实际 API 返回的可能是 `code: 200002 skill auth failed`（凭证过期），而非标准 401。遇到连续 401 时，先手动测试确认真实错误码：
+
+```bash
+curl -s -X POST "https://ima.qq.com/openapi/wiki/v1/import_urls" \
+  -H "Content-Type: application/json" \
+  -H "ima-openapi-clientid: $(cat ~/.config/ima/client_id)" \
+  -H "ima-openapi-apikey: $(cat ~/.config/ima/api_key)" \
+  -d '{"knowledge_base_id":"AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ=","urls":[]}'
+```
+返回 `code:51`（URL 列表为空）= 认证正常。返回 `code:200002` = 凭证已过期，需用户重新获取 API Key 更新 `~/.config/ima/api_key`。
+
+**诊断**：从 config.yaml 中提取配置并测试：
 
 ```bash
 # 读取当前配置
@@ -480,7 +491,30 @@ curl -s -X POST "https://ima.qq.com/openapi/wiki/v1/import_urls" \
   -H "ima-openapi-apikey: $(cat ~/.config/ima/api_key)" \
   -d '{"knowledge_base_id":"AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ=","urls":[]}'
 ```
-返回 `code:51`（URL 列表不能为空）= 认证正常。返回 `code:200002` = header 名错误。
+返回 `code:51`（URL 列表不能为空）= 认证正常。返回 `code:200002` = header 名错误**或凭证过期**（`msg: "skill auth failed"`）。
+
+### IMA `code:200002` 的两种原因
+
+| 原因 | msg 字段 | 修复 |
+|------|---------|------|
+| header 名错误 | `skill auth failed` | 确认使用 `ima-openapi-clientid` / `ima-openapi-apikey` |
+| 凭证过期/撤销 | `skill auth failed` | 登录 IMA 平台重新获取，更新 `~/.config/ima/client_id` 和 `api_key` |
+
+> ⚠️ **脚本误报**：`collect_v2.py` 将 IMA 的 `code:200002` 错误捕获为 `HTTP Error 401: Unauthorized`（requests 异常处理），实际并非 HTTP 401，而是 IMA 业务层认证失败。看到脚本输出 `IMA 知识库添加失败: HTTP Error 401` 时，不要误判为 HTTP 层问题，应直接用 curl 诊断真实错误码。
+
+### IMA 批量补传
+
+当多篇文章 IMA 导入失败后，可用一条 curl 批量补传（IMA API 支持数组）：
+
+```bash
+curl -s -X POST "https://ima.qq.com/openapi/wiki/v1/import_urls" \
+  -H "Content-Type: application/json" \
+  -H "ima-openapi-clientid: $(cat ~/.config/ima/client_id)" \
+  -H "ima-openapi-apikey: $(cat ~/.config/ima/api_key)" \
+  -d '{"knowledge_base_id":"AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ=","urls":["url1","url2",...]}'
+```
+
+返回每个 URL 的 `ret_code: 0` 表示成功。比逐条调用更高效。
 
 ### NotebookLM `--notebook` 名称匹配失败
 
