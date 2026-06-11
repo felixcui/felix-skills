@@ -123,7 +123,7 @@ python3 scripts/fetch_ai_trending.py
 - twitter CLI 返回嵌套结构：`author` 是 dict（`screenName`/`name`），`metrics` 是 dict（`likes`/`retweets`/`views`），有 `createdAtISO` 时间字段
 - 自动排除 users.txt 中已监控用户的推文（避免重复）
 - 只保留最近 2 天内的推文（用 `createdAtISO` 字段判断）
-- 按 engagement_score（likes + retweets×2 + replies）降序取 Top 10
+- 按 engagement_score（likes + retweets×2 + replies + views÷100）降序取 Top 10
 - 输出 JSON 到 stdout，同时写入 `/tmp/x-monitor-ai-trending.json`
 - timeout 60s，失败时优雅降级输出空数组
 

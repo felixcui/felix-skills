@@ -76,7 +76,7 @@ def parse_tweet(t):
     retweets = _to_int(metrics.get("retweets", 0))
     replies = _to_int(metrics.get("replies", 0))
     views = _to_int(metrics.get("views", 0))
-    engagement_score = likes + retweets * 2 + replies
+    engagement_score = likes + retweets * 2 + replies + views // 100
     # twitter CLI 直接提供时间字段
     created_at = t.get("createdAtISO", t.get("createdAt", ""))
     tweet_id = t.get("id", "")
