@@ -48,67 +48,61 @@ def is_feishu_doc(url):
 
 
 def fetch_feishu_doc(url):
-    """抓取飞书文档 - 使用 lark-cli docs +fetch"""
+    """抓取飞书文档 - 使用 lark-cli docs +fetch (v2 API)"""
     try:
-        # 提取 doc_id（支持 /docx/ 和 /wiki/ 格式，去除查询参数）
-        clean_url = url.split('?')[0].split('#')[0]
-        if '/docx/' in clean_url:
-            doc_id = clean_url.split('/docx/')[-1]
-        elif '/wiki/' in clean_url:
-            doc_id = clean_url.split('/wiki/')[-1]
-        else:
-            return {"error": "无法识别的飞书文档 URL"}
+        # v2 API 接受完整 URL 或 token，直接传入即可
+        result = subprocess.run(
+            ['lark-cli', 'docs', '+fetch', '--doc', url,
+             '--scope', 'full', '--doc-format', 'markdown',
+             '--format', 'json', '--as', 'user'],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
 
-        # 使用 lark-cli 获取文档内容（自动分页）
-        all_markdown = ""
-        offset = "0"
-        doc_title = ""
+        if result.returncode != 0:
+            stderr = result.stderr.strip()
+            # stderr 可能包含 hint，提取实际错误
+            return {"error": f"lark-cli 调用失败: {stderr}"}
 
-        for _ in range(20):  # 最多 20 页，防止无限循环
-            result = subprocess.run(
-                ['lark-cli', 'docs', '+fetch', '--doc', doc_id,
-                 '--format', 'json', '--limit', '10000',
-                 '--offset', offset],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
+        try:
+            resp = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return {"error": f"lark-cli 返回非 JSON: {result.stdout[:200]}"}
 
-            if result.returncode != 0:
-                return {"error": f"lark-cli 调用失败: {result.stderr.strip()}"}
+        if not resp.get('ok'):
+            return {"error": f"lark-cli API 错误: {resp}"}
 
-            try:
-                resp = json.loads(result.stdout)
-            except json.JSONDecodeError:
-                return {"error": f"lark-cli 返回非 JSON: {result.stdout[:200]}"}
+        # v2 返回结构: data.document.content (markdown/xml 字符串)
+        doc_data = resp.get('data', {}).get('document', {})
+        content = doc_data.get('content', '')
 
-            if not resp.get('ok'):
-                return {"error": f"lark-cli API 错误: {resp}"}
-
-            data = resp['data']
-            if not doc_title and data.get('title'):
-                doc_title = data['title'].strip()
-
-            chunk = data.get('markdown', '')
-            all_markdown += chunk
-
-            if not data.get('has_more'):
-                break
-            offset = str(data.get('next_offset', data.get('length', '0')))
-
-        if not all_markdown.strip():
+        if not content or not content.strip():
             return {"error": "飞书文档内容为空（可能无权限访问）"}
 
-        # 清理飞书特殊标签（image / view / file / mention-doc 等）
+        # v2 返回的 markdown 格式，content 以 <title> 开头
+        # 从 content 中提取标题
+        doc_title = ""
+        title_match = re.match(r'<title>(.*?)</title>', content)
+        if title_match:
+            doc_title = title_match.group(1).strip()
+            content = content[title_match.end():]
+
+        # 如果 markdown 格式，清理飞书特殊标签
+        all_markdown = content
         all_markdown = re.sub(r'<image[^/]*/>', '', all_markdown)
         all_markdown = re.sub(r'<view[^>]*>.*?</view>', '', all_markdown, flags=re.DOTALL)
         all_markdown = re.sub(r'<file[^/]*/>', '', all_markdown)
-        all_markdown = re.sub(r'<mention-doc[^>]*>(.*?)</mention-doc>', r'\1', all_markdown)
+        all_markdown = re.sub(r'<mention-doc[^>]*>(.*?)</mention-doc>', r'\\1', all_markdown)
+        # 清理其他飞书特殊标签
+        all_markdown = re.sub(r'<whiteboard[^>]*>.*?</whiteboard>', '', all_markdown, flags=re.DOTALL)
+        all_markdown = re.sub(r'<grid[^>]*>.*?</grid>', '', all_markdown, flags=re.DOTALL)
+        all_markdown = re.sub(r'<column[^>]*/?>', '', all_markdown)
         # 修复 lark-cli 转义的 unicode
         all_markdown = all_markdown.replace('\\u003c', '<').replace('\\u003e', '>')
         all_markdown = all_markdown.replace('\\u0026', '&')
 
-        # 从 markdown 中提取标题（如果没有从 API 拿到）
+        # 从 markdown 中提取标题（如果 XML title 没拿到）
         if not doc_title:
             for line in all_markdown.split('\n'):
                 if line.startswith('# '):

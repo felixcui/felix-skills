@@ -27,6 +27,19 @@ notebooklm source list --notebook "<FULL_UUID>" --json > /tmp/nlm_sources.json
 grep '"status"' /tmp/nlm_sources.json | grep -v '"status": "ready"'
 ```
 
+⚠️ **JSON 文件首行有 Python warning**：`notebooklm source list --json` 的输出会在 JSON 之前插入 Python warning（如 `UnknownTypeWarning: Unknown source type code 0`），导致 `json.load()` 解析失败。**解析前必须跳过 warning 行**：
+
+```python
+with open('/tmp/nlm_sources.json') as f:
+    lines = f.readlines()
+json_start = 0
+for i, line in enumerate(lines):
+    if line.strip().startswith('{'):
+        json_start = i
+        break
+data = json.loads(''.join(lines[json_start:]))
+```
+
 ## 3. 清理残留与异常 source
 
 ### 3a. 垃圾 source 清理
