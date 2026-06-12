@@ -35,7 +35,9 @@ except ImportError:
     HAS_API_CLIENT = False
 
 # 公众号封面图素材 ID（固定）
-WECHAT_THUMB_MEDIA_ID = "qxQUqgd9fe1MaWRFFohGgvlKAcpIakKP0x4GUfNTl3JbVRj64hVIZi8V68JE1q53"
+#WECHAT_THUMB_MEDIA_ID = "qxQUqgd9fe1MaWRFFohGgvlKAcpIakKP0x4GUfNTl3JbVRj64hVIZi8V68JE1q53"
+WECHAT_THUMB_MEDIA_ID = "-qe1bwy7r6ypdY2NjJZf6cW1tTVXnyoqebd8dXn7CgmqJFGUFO7PJ3cEWHHv8hhX"
+
 
 
 def get_week_range(target_date: datetime = None) -> tuple[str, str]:

@@ -47,7 +47,8 @@ BAOYU_SKILL_DIR = Path(os.getenv('BAOYU_MARKDOWN_TO_HTML_DIR', '~/work/skills/ba
 NEWS_OUTPUT_DIR = Path(os.getenv('NEWS_OUTPUT_DIR', str(SKILL_ROOT / 'output'))).expanduser()
 
 # 默认封面图素材ID
-DEFAULT_THUMB_MEDIA_ID = "qxQUqgd9fe1MaWRFFohGgo8SIofgUyArMyHRseRKpcGrV1yW3yBRRjrd_0Kj41uF"
+#DEFAULT_THUMB_MEDIA_ID = "qxQUqgd9fe1MaWRFFohGgo8SIofgUyArMyHRseRKpcGrV1yW3yBRRjrd_0Kj41uF"
+DEFAULT_THUMB_MEDIA_ID = "-qe1bwy7r6ypdY2NjJZf6ehB0ZZQrQWn4ZUwjC6pdpxNlhNkijyYX50FmrjzEVkZ"
 
 
 def _load_module(name: str, path: Path):
