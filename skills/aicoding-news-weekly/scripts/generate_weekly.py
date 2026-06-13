@@ -8,8 +8,10 @@ import os
 import sys
 import argparse
 import subprocess
+import json
 import re
 from datetime import datetime, timedelta
+from pathlib import Path
 
 # 脚本目录：aicoding-news-weekly/scripts/
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -26,6 +28,9 @@ except ImportError:
 # 默认输出目录：优先从 env 读取，如果没有则使用 skill 内部的 output/ 子目录
 env_output_dir = os.getenv("OUTPUT_DIR")
 DEFAULT_OUTPUT_DIR = os.path.expanduser(env_output_dir) if env_output_dir else os.path.join(SKILL_DIR, "output")
+
+# baoyu-markdown-to-html 工具路径
+BAOYU_SKILL_DIR = Path(os.getenv('BAOYU_MARKDOWN_TO_HTML_DIR', '~/work/skills/baoyu-skills/skills/baoyu-markdown-to-html')).expanduser()
 
 # 导入 API 客户端
 try:
@@ -95,27 +100,68 @@ def extract_title_and_content(markdown_text: str) -> tuple[str, str]:
         markdown_text = markdown_text.replace(title_match.group(0), '', 1)
         markdown_text = markdown_text.lstrip('\n')
 
-    # 移除水平分割线
-    markdown_text = re.sub(r'^\s*[-*_]{3,}\s*$', '', markdown_text, flags=re.MULTILINE)
-
     return title, markdown_text
 
 
-def convert_to_html(markdown_text: str) -> str:
-    """调用 md_to_html.py 转换 Markdown 为 HTML
+def convert_to_html(markdown_text: str, body_only: bool = False) -> str:
+    """使用 baoyu-markdown-to-html 转换 Markdown 为 HTML
 
     Args:
         markdown_text: Markdown 文本
+        body_only: 是否只返回 body 内容（用于公众号 API）
 
     Returns:
         HTML 内容
     """
-    # 使用 md_to_html 模块进行转换
-    sys.path.insert(0, SCRIPT_DIR)
-    from md_to_html import MarkdownToWechat
+    if not BAOYU_SKILL_DIR or not BAOYU_SKILL_DIR.exists():
+        raise FileNotFoundError(
+            f"baoyu-markdown-to-html 目录不存在: {BAOYU_SKILL_DIR}\n"
+            f"请在 .env 中配置 BAOYU_MARKDOWN_TO_HTML_DIR"
+        )
 
-    converter = MarkdownToWechat()
-    return converter.get_content_only(markdown_text)
+    baoyu_main = BAOYU_SKILL_DIR / "scripts" / "main.ts"
+    if not baoyu_main.exists():
+        raise FileNotFoundError(
+            f"baoyu-markdown-to-html main.ts 不存在: {baoyu_main}\n"
+            f"请确保 baoyu-markdown-to-html skill 已正确安装"
+        )
+
+    # 保存到临时文件
+    temp_md = Path("/tmp/aicoding_weekly_temp.md")
+    temp_md.write_text(markdown_text, encoding='utf-8')
+
+    try:
+        result = subprocess.run(
+            ["bun", str(baoyu_main), str(temp_md), "--theme", "modern", "--keep-title", "--font-size", "17px"],
+            capture_output=True, text=True, timeout=60
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"baoyu-markdown-to-html 转换失败: {result.stderr}"
+            )
+
+        # 解析 JSON 输出
+        output_data = json.loads(result.stdout)
+        html_path = output_data.get("htmlPath")
+
+        if not html_path or not Path(html_path).exists():
+            raise RuntimeError("HTML 文件未生成")
+
+        html_content = Path(html_path).read_text(encoding='utf-8')
+
+        if body_only:
+            # 提取 body 内容（微信 API 只需要 body 部分）
+            body_match = re.search(r'<body[^>]*>(.*?)</body>', html_content, re.DOTALL)
+            if body_match:
+                html_content = body_match.group(1)
+
+        print(f"✅ HTML 转换成功 ({len(html_content)} 字节)")
+        return html_content
+
+    finally:
+        if temp_md.exists():
+            temp_md.unlink()
 
 
 def publish_to_wechat_api(
@@ -217,8 +263,8 @@ def publish_to_wechat(
             print("❌ 缺少 wechat_api_client 模块")
             return False
 
-        # 转换 Markdown 为 HTML
-        content_html = convert_to_html(processed_content)
+        # 转换 Markdown 为 HTML（仅 body 内容）
+        content_html = convert_to_html(processed_content, body_only=True)
 
         # 发布到微信
         try:
@@ -239,21 +285,32 @@ def publish_to_wechat(
             return False
 
     else:
-        # HTML 转换模式（调用 md_to_html.py）
-        md_to_html_script = os.path.join(SCRIPT_DIR, "md_to_html.py")
-        cmd = [sys.executable, md_to_html_script, md_file]
+        # HTML 转换模式（使用 baoyu-markdown-to-html）
+        print(f"\n📱 使用 baoyu-markdown-to-html 转换{' (预览模式)' if preview else ''}...")
+        html_content = convert_to_html(processed_content, body_only=False)
 
         if preview:
-            cmd.append("--preview")
+            # 保存到临时文件并在浏览器中打开
+            import webbrowser
+            import tempfile
+            temp_file = tempfile.NamedTemporaryFile(
+                mode='w', suffix='.html', delete=False, encoding='utf-8'
+            )
+            temp_file.write(html_content)
+            temp_file.close()
+            preview_path = temp_file.name
+            print(f"🌐 预览文件: {preview_path}")
+            webbrowser.open(f'file://{preview_path}')
 
-        print(f"\n📱 调用 HTML 转换工具{' (预览模式)' if preview else ''}...")
-        result = subprocess.run(cmd, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            print(f"⚠️ 转换工具调用失败: {result.stderr}")
-            return False
-
-        print(result.stdout)
+        # 复制到剪贴板
+        try:
+            import pyperclip
+            pyperclip.copy(html_content)
+            print("✅ HTML 已复制到剪贴板！")
+            print("💡 现在可以直接粘贴到公众号编辑器")
+        except ImportError:
+            print("⚠️  未安装 pyperclip，无法复制到剪贴板")
+            print("提示: pip install pyperclip")
 
     return True
 
