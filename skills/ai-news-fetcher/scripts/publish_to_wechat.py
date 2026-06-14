@@ -48,7 +48,7 @@ NEWS_OUTPUT_DIR = Path(os.getenv('NEWS_OUTPUT_DIR', str(SKILL_ROOT / 'output')))
 
 # 默认封面图素材ID
 #DEFAULT_THUMB_MEDIA_ID = "qxQUqgd9fe1MaWRFFohGgo8SIofgUyArMyHRseRKpcGrV1yW3yBRRjrd_0Kj41uF"
-DEFAULT_THUMB_MEDIA_ID = "-qe1bwy7r6ypdY2NjJZf6ehB0ZZQrQWn4ZUwjC6pdpxNlhNkijyYX50FmrjzEVkZ"
+DEFAULT_THUMB_MEDIA_ID = "-qe1bwy7r6ypdY2NjJZf6bOjFVbsw1hQuaqDpmFowfkp5C90wR73k_lCJlKP2IXe"
 
 
 def _load_module(name: str, path: Path):

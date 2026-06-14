@@ -256,7 +256,7 @@ titles_preview = ' | '.join([n['title'][:20] for n in raw[:5]])
 digest = titles_preview + ' ...' if len(raw) > 5 else titles_preview
 
 client = mod.WeChatAPIClient(appid=os.getenv('WECHAT_APPID'), appsecret=os.getenv('WECHAT_APPSECRET'))
-DEFAULT_THUMB_MEDIA_ID = "qxQUqgd9fe1MaWRFFohGgo8SIofgUyArMyHRseRKpcGrV1yW3yBRRjrd_0Kj41uF"
+DEFAULT_THUMB_MEDIA_ID = "-qe1bwy7r6ypdY2NjJZf6TyRPpVZaUI9vdtaQ_qM8Tgerxy2vFqrcmaSEoIr7Dii"
 media_id = client.create_draft(
     title=title, author='AICoding基地', digest=digest[:120],
     content=body_html, content_source_url='',
@@ -326,6 +326,25 @@ os.environ['AI_NEWS_API_BASE'] = api_base.rstrip('/')
 ### ⚠️ `terminal()` 安全扫描会拦截敏感 URL
 
 `terminal()` 会对命令文本进行安全扫描，`.app` TLD 域名和原始 IP 地址 URL 都可能被标记。**解决方案**：将 URL 写入 Python 脚本内部，不在 `terminal()` 命令行中直接传递。
+
+### ⚠️ WeChat `thumb_media_id` 会过期
+
+微信永久素材的 `thumb_media_id` **并非真正永久**——一段时间后可能失效，报 `40007: invalid media_id`。
+
+**恢复流程**：当 cron 草稿创建失败并返回 `40007` 时：
+1. 用 PIL 生成简单封面图（渐变背景 + 装饰），保存为 `/tmp/ai_news_cover.jpg`
+2. 调用 `client.upload_permanent_material('/tmp/ai_news_cover.jpg', 'thumb')` 获取新 `thumb_media_id`
+3. 用新 ID 创建草稿
+4. **更新 `publish_to_wechat.py` 中的 `DEFAULT_THUMB_MEDIA_ID`**（cron Step 3 示例里也硬编码了这个值）
+
+**⚠️ `upload_permanent_material` 返回值是字符串，不是 dict**：该方法直接返回 `media_id` 字符串，**不是** `{"media_id": "xxx"}`。不要用 `result.get('media_id')`，直接 `new_id = result` 即可。
+
+**生成封面图注意事项**：
+- macOS 上 PIL 可用字体路径：`/System/Library/Fonts/STHeiti Medium.ttc` 或 `/System/Library/Fonts/Hiragino Sans GB.ttc`。**`PingFang.ttc` 不存在**，不要使用。
+- 微信公众号封面标准比例：900×383（2.35:1），不是 900×500。
+- 可用 `scripts/generate_cover.py` 快速生成标准封面。
+
+> **改进建议**：把 `DEFAULT_THUMB_MEDIA_ID` 存到 `.env`（如 `WECHAT_THUMB_MEDIA_ID=...`），而非硬编码在 SKILL.md 示例脚本里。更新 `.env` 比 patch SKILL.md 更方便，且 cron 脚本可直接 `os.getenv('WECHAT_THUMB_MEDIA_ID')` 读取。
 
 ### 微信公众号发布
 
