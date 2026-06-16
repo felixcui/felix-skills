@@ -307,18 +307,26 @@ IMA_API_BASE = "https://ima.qq.com"
 
 > ⚠️ Wiki 同步已从收集流程中移除，改为每日例行维护任务（21:00）统一批量同步。
 
-### 摘要引擎失败与降级
+### 摘要引擎三级降级链
 
-GLM API 有两种已知故障模式：
+降级顺序：**GLM → hongmacc (gpt-5.4-mini) → 规则摘要**。每个 LLM 超时 30 秒。
 
-| 故障 | 症状 | 频率 |
+| 引擎 | 配置来源 | 模型 | 触发条件 |
+|------|---------|------|---------|
+| GLM（第1优先） | `news-collect/.env`（OPENAI_*） | glm-5-turbo | 默认 |
+| hongmacc（第2优先） | `~/.hermes/config.yaml`（providers） | gpt-5.4-mini | GLM 超时/报错/返回无效内容 |
+| 规则（兜底） | 内置 | — | 两个 LLM 都失败 |
+
+**已知故障模式**：
+
+| 故障 | 症状 | 处理 |
 |------|------|------|
-| 返回 `None` | `TypeError: object of type 'NoneType' has no len()` | 偶发 |
-| 输出分析过程 | `⚠️ GLM 输出了分析过程而非摘要，使用规则生成...` | **高频**（~60% 的请求） |
+| GLM 超时 | `HTTPSConnectionPool: Read timed out` | 自动降级到 hongmacc |
+| GLM 输出分析过程 | `⚠️ GLM 返回无效内容，尝试 hongmacc...` | 自动降级到 hongmacc |
+| GLM 返回 `None` | `TypeError: object of type 'NoneType'` | 自动降级到 hongmacc |
+| hongmacc 也失败 | 极少见 | 降级到规则摘要 |
 
-第二种模式下，GLM 返回的不是摘要文本而是推理/分析过程（如"让我分析一下这篇文章…"），脚本检测后自动降级为规则引擎。这是目前最常见的降级原因，说明 GLM 对摘要 prompt 的指令遵从不够稳定。
-
-**无需手动干预**——脚本已内置自动降级。如需强制使用规则引擎：
+**无需手动干预**——脚本已内置三级降级。如需强制使用规则引擎：
 
 ```bash
 python3 scripts/collect_v2.py <URL> --summary-engine rule

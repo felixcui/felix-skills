@@ -203,7 +203,7 @@ class WeChatNewsPublisher:
         today = datetime.now()
         
         title = f"AI 资讯日报-{today.strftime('%Y.%m.%d')}"
-        author = "AICoding基地"
+        author = "AI资讯助手"
         digest = f"本期汇总了最新的 AI 相关资讯，涵盖编程工具、模型技术、产品应用和行业动态等内容。"
         content_source_url = ""
         

@@ -374,8 +374,53 @@ def _load_hermes_config():
                 return yaml.safe_load(f)
     return {}
 
+def _call_llm_for_summary(api_key, base_url, model_name, prompt, max_length):
+    """调用 LLM API 生成摘要的通用函数，返回摘要字符串或 None"""
+    chat_url = base_url.rstrip("/")
+    if not chat_url.endswith("/chat/completions"):
+        chat_url = chat_url.rstrip("/") + "/chat/completions"
+
+    resp = requests.post(
+        chat_url,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={
+            "model": model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 1024,
+            "temperature": 0.3,
+        },
+        timeout=30,
+    )
+
+    if resp.status_code == 200:
+        msg = resp.json()["choices"][0]["message"]
+        summary = msg.get("content", "").strip() or msg.get("reasoning_content", "").strip()
+        # 清理摘要
+        summary = re.sub(r'^["\']|["\']$', '', summary)
+        summary = re.sub(r'^(摘要|总结)[:：]?\s*', '', summary)
+        summary = re.sub(r'\.{3}', '', summary)
+        summary = re.sub(r'…', '', summary)
+
+        # 检测伪摘要：推理模型偶尔输出分析过程而非实际摘要
+        if re.match(r'^[\d]+\.\s*\*{0,2}(分析|任务|长度|格式|内容|约束|要求)', summary):
+            return None
+
+        if len(summary) > 50:
+            if len(summary) > max_length:
+                truncated = summary[:max_length]
+                last_period = truncated.rfind('。')
+                if last_period > max_length * 0.6:
+                    summary = truncated[:last_period+1]
+                else:
+                    summary = truncated.rstrip() + '。'
+            if not summary.endswith('。'):
+                summary = summary.rstrip('.') + '。'
+            return summary
+    return None
+
+
 def generate_summary_with_glm(content, title="", max_length=200):
-    """使用 GLM API 生成文章摘要"""
+    """使用 GLM API 生成文章摘要，失败时自动降级到 hongmacc，再失败用规则"""
     if not content:
         return ""
 
@@ -390,8 +435,8 @@ def generate_summary_with_glm(content, title="", max_length=200):
 
 摘要："""
 
+    # ---- 第1优先：GLM（从 .env 读取）----
     try:
-        # 从 skill 自身的 .env 文件读取 API 配置
         skill_env_path = Path(__file__).resolve().parent.parent / ".env"
         api_key, base_url, model_name = "", "https://open.bigmodel.cn/api/paas/v4", "glm-5-turbo"
         if skill_env_path.exists():
@@ -404,61 +449,44 @@ def generate_summary_with_glm(content, title="", max_length=200):
                 elif line.startswith("OPENAI_MODEL="):
                     model_name = line.split("=", 1)[1].strip()
 
-        if not api_key:
-            print("   ⚠️ GLM API key 未配置，使用规则生成摘要...")
-            return generate_summary_rule_based(content, title, max_length)
-
-        # 构建 chat completions endpoint
-        chat_url = base_url.rstrip("/")
-        if not chat_url.endswith("/chat/completions"):
-            chat_url = chat_url.rstrip("/") + "/chat/completions"
-
-        print(f"   使用 GLM ({model_name}) 生成摘要...")
-        resp = requests.post(
-            chat_url,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={
-                "model": model_name,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 1024,
-                "temperature": 0.3,
-            },
-            timeout=60,
-        )
-
-        if resp.status_code == 200:
-            msg = resp.json()["choices"][0]["message"]
-            # GLM 思考模型可能把内容放在 reasoning_content 里
-            summary = msg.get("content", "").strip() or msg.get("reasoning_content", "").strip()
-            # 清理摘要
-            summary = re.sub(r'^["\']|["\']$', '', summary)
-            summary = re.sub(r'^(摘要|总结)[:：]?\s*', '', summary)
-            summary = re.sub(r'\.{3}', '', summary)
-            summary = re.sub(r'…', '', summary)
-
-            # 检测伪摘要：推理模型偶尔输出分析过程而非实际摘要
-            if re.match(r'^[\d]+\.\s*\*{0,2}(分析|任务|长度|格式|内容|约束|要求)', summary):
-                print(f"   ⚠️ GLM 输出了分析过程而非摘要，使用规则生成...")
-                return generate_summary_rule_based(content, title, max_length)
-
-            if len(summary) > 50:
-                if len(summary) > max_length:
-                    truncated = summary[:max_length]
-                    last_period = truncated.rfind('。')
-                    if last_period > max_length * 0.6:
-                        summary = truncated[:last_period+1]
-                    else:
-                        summary = truncated.rstrip() + '。'
-                if not summary.endswith('。'):
-                    summary = summary.rstrip('.') + '。'
+        if api_key:
+            print(f"   使用 GLM ({model_name}) 生成摘要...")
+            summary = _call_llm_for_summary(api_key, base_url, model_name, prompt, max_length)
+            if summary:
                 print(f"   使用 GLM 生成摘要 ({len(summary)}字)")
                 return summary
+            else:
+                print(f"   ⚠️ GLM 返回无效内容，尝试 hongmacc...")
         else:
-            print(f"   GLM API 返回错误 ({resp.status_code})，使用规则生成摘要...")
-            return generate_summary_rule_based(content, title, max_length)
+            print("   ⚠️ GLM API key 未配置，尝试 hongmacc...")
     except Exception as e:
-        print(f"   GLM 不可用: {e}")
-        return generate_summary_rule_based(content, title, max_length)
+        print(f"   ⚠️ GLM 不可用: {e}，尝试 hongmacc...")
+
+    # ---- 第2优先：hongmacc (gpt-5.4-mini，从 ~/.hermes/config.yaml 读取)----
+    try:
+        import yaml as _yaml
+        config_path = Path.home() / ".hermes" / "config.yaml"
+        if config_path.exists():
+            cfg = _yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            providers = cfg.get("providers", [])
+            for p in providers:
+                if isinstance(p, dict) and p.get("name") == "hongmacc":
+                    h_key = p.get("api_key", "")
+                    h_url = p.get("base_url", "https://hongmacc.com/v1")
+                    h_model = p.get("model", "gpt-5.4-mini")
+                    print(f"   使用 hongmacc ({h_model}) 生成摘要...")
+                    summary = _call_llm_for_summary(h_key, h_url, h_model, prompt, max_length)
+                    if summary:
+                        print(f"   使用 hongmacc 生成摘要 ({len(summary)}字)")
+                        return summary
+                    else:
+                        print(f"   ⚠️ hongmacc 返回无效内容，使用规则生成...")
+                    break
+    except Exception as e:
+        print(f"   ⚠️ hongmacc 不可用: {e}")
+
+    # ---- 最终降级：规则摘要 ----
+    return generate_summary_rule_based(content, title, max_length)
 
 
 
