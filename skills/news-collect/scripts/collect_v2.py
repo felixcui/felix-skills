@@ -389,7 +389,7 @@ def _call_llm_for_summary(api_key, base_url, model_name, prompt, max_length):
             "max_tokens": 1024,
             "temperature": 0.3,
         },
-        timeout=30,
+        timeout=60,
     )
 
     if resp.status_code == 200:

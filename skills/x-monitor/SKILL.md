@@ -161,7 +161,13 @@ deliver: origin
 - `lark-cli im +messages-send` 报 `validation` 错误：检查是否缺少 `--as bot` 参数。
 - **twitter CLI 返回嵌套结构**：`author` 是 dict（含 `screenName`/`name`），`metrics` 是 dict（含 `likes`/`retweets`/`views`/`bookmarks`），有 `createdAtISO` 时间字段。`parse_tweet()` 已适配此结构。如果 twitter CLI 更新了输出格式，优先检查 `parse_tweet` 函数。
 - **opencli 已弃用（AI 热点）**：fetch_ai_trending.py 已从 opencli 切换到 twitter CLI。opencli 仍作为备用工具保留，但不再用于 AI 热点获取。opencli 的 Browser Bridge 扩展经常断连（`opencli doctor` 显示 `[MISSING] Extension`），导致 AI 热点连续多天失败，这是切换的主要原因。
+- **转发推文 `retweet_from` 字段解析 bug**：`fetch_new_tweets.py` 在提取转发原作者时，URL 解析逻辑错误地取了 `status` 作为用户名（如 `https://x.com/wquguru/status/2066359502404780364` 中提取出 `status` 而非 `wquguru`）。脚本输出的 `retweet_from` 字段不可靠，cron 输出中需要手动从 `url` 字段中提取正确的转发原作者（`https://x.com/<author>/status/<id>` 中的 `<author>`）。
 - **twitter CLI 认证失效（静默失败）**：twitter CLI 依赖浏览器 cookies 认证，cookies 过期或 Keychain 权限被拒绝时，`user-posts` 和 `search` 均返回 `{"ok": false, "error": {"code": "not_authenticated"}}`。但 `fetch_new_tweets.py` 会将其静默处理为「无新推文」（输出 `NO_NEW_TWEETS`），`fetch_ai_trending.py` 输出空数组 `[]`——与真正无内容的输出完全一致，**无法区分认证失败和真的无新推文**。诊断方法：手动运行 `twitter user-posts <username> --max 1 --json`，如果看到 `not_authenticated` 错误，说明需要重新认证。修复：在浏览器中重新登录 x.com，或授权 Keychain 访问（钥匙串访问 → 搜索 "Safe Storage" → 添加终端应用）。
+
+## ⚠️ Cron 模式限制
+
+- **`execute_code` 在 cron 中被禁用**：cron 任务无用户在场审批，`execute_code` 调用会被拦截（`"cron jobs run without a user present to approve it"`）。格式化推文数据时必须使用 `terminal` 内联 Python 或直接拼接，不要用 `execute_code`。
+- **`terminal` 内联 Python 的 shell 转义**：`terminal` 中写 Python 时，字符串中的引号和 `$` 需要转义，复杂格式化容易出错。推荐方案：先将 JSON 落盘到 `/tmp/`（脚本已自动写入），再用 `python3 -c "import json; ..." $(cat /tmp/file.json)` 读取并格式化。
 
 ## Cron 任务
 

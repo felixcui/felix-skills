@@ -20,7 +20,7 @@ metadata: { "openclaw": { "emoji": "📰", "requires": { "bins": ["python3"] } }
 ## 功能特点
 
 - ✅ **一站式处理**：一个命令完成抓取、摘要、推送全流程
-- ✅ **多引擎摘要**：默认使用 GLM API 生成摘要，支持 Claude Code 和纯规则引擎
+- ✅ **多引擎摘要**：默认使用 GLM API 生成摘要，支持纯规则引擎兜底
 - ✅ **支持多源**：微信公众号、普通网页、Twitter/X 自动识别
 - ✅ **自动降级**：LLM 不可用时自动使用规则生成摘要
 - ✅ **自动推送**：支持飞书 webhook 推送
@@ -107,9 +107,6 @@ python3 scripts/collect_v2.py <URL> --webhook "https://your-webhook-url"
 # GLM API（默认，速度快）
 python3 scripts/collect_v2.py <URL> --summary-engine glm
 
-# Claude Code（高质量，需安装 claude CLI）
-python3 scripts/collect_v2.py <URL> --summary-engine claude
-
 # 纯规则提取（无 API 调用）
 python3 scripts/collect_v2.py <URL> --summary-engine rule
 ```
@@ -141,7 +138,7 @@ python3 scripts/collect_v2.py <URL> --output-dir ~/Desktop/my_news
    作者: AI工具进化论
 
 [2/5] 生成摘要...
-   使用 Claude Code 生成摘要...
+   使用 GLM 生成摘要...
    生成摘要完成 (156字)
 ✅ 摘要生成完成 (156字)
 
@@ -177,7 +174,7 @@ python3 scripts/collect_v2.py <URL> --output-dir ~/Desktop/my_news
 ✅ 抓取成功: Harness Engineering详解
 
 [2/5] 生成摘要...
-   使用 Claude Code 生成摘要...
+   使用 GLM 生成摘要...
    生成摘要完成 (156字)
 ✅ 摘要生成完成 (156字)
 
@@ -278,7 +275,7 @@ IMA_API_BASE = "https://ima.qq.com"
 | `--webhook` | 自定义飞书webhook | 内置地址 |
 | `--no-push` | 不推送到飞书，仅输出结果 | False |
 | `--summary-length` | 摘要最大长度 | 200 |
-| `--summary-engine` | 摘要引擎：glm(默认) / claude / rule | glm |
+| `--summary-engine` | 摘要引擎：glm(默认) / rule | glm |
 | `--notebook` | 上传到 NotebookLM | False |
 | `--format` | NotebookLM 生成格式 | - |
 | `--batch` | 批量处理URL文件 | - |
@@ -309,7 +306,7 @@ IMA_API_BASE = "https://ima.qq.com"
 
 ### 摘要引擎三级降级链
 
-降级顺序：**GLM → hongmacc (gpt-5.4-mini) → 规则摘要**。每个 LLM 超时 30 秒。
+降级顺序：**GLM → hongmacc (gpt-5.4-mini) → 规则摘要**。每个 LLM 超时 60 秒。
 
 | 引擎 | 配置来源 | 模型 | 触发条件 |
 |------|---------|------|---------|
@@ -438,7 +435,7 @@ GLM 降级到规则提取时，微信文章正文开头常含作者行（`作者
 3. **行内清洗**：去除 markdown 格式标记、残留的 `作者｜xxx 编辑｜xxx` 标记
 4. **参数优化**：intro 区域从 500 扩大到 800 字符，句子长度限制从 20-150 放宽到 15-200，补充更多句子到摘要
 
-**降级链路**：当前为 GLM → rule（hongmacc 作为中间降级尚未实现，需手动时可用 `--summary-engine rule`）。
+**降级链路**：当前为 GLM → hongmacc (gpt-5.4-mini) → 规则摘要。详见上方「摘要引擎三级降级链」章节。
 
 **手动修复已有错误摘要**：如果摘要已经推送到飞书且有问题，可用 hongmacc 重新生成摘要并更新 Markdown + 重新推送 webhook：
 
