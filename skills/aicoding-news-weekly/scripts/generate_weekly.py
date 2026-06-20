@@ -271,7 +271,7 @@ def publish_to_wechat(
             media_id = publish_to_wechat_api(
                 title=title,
                 content=content_html,
-                author="AICoding基地",
+                author="AI资讯助手",
                 digest="工具动态，编程实践，编程模型，业界观点",
                 thumb_media_id=WECHAT_THUMB_MEDIA_ID
             )

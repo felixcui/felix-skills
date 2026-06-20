@@ -258,7 +258,7 @@ digest = titles_preview + ' ...' if len(raw) > 5 else titles_preview
 client = mod.WeChatAPIClient(appid=os.getenv('WECHAT_APPID'), appsecret=os.getenv('WECHAT_APPSECRET'))
 DEFAULT_THUMB_MEDIA_ID = "-qe1bwy7r6ypdY2NjJZf6TyRPpVZaUI9vdtaQ_qM8Tgerxy2vFqrcmaSEoIr7Dii"
 media_id = client.create_draft(
-    title=title, author='AICoding基地', digest=digest[:120],
+    title=title, author='AI资讯助手', digest=digest[:120],
     content=body_html, content_source_url='',
     thumb_media_id=DEFAULT_THUMB_MEDIA_ID,
     need_open_comment=1, only_fans_can_comment=0
