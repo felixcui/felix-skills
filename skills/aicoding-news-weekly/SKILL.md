@@ -152,6 +152,49 @@ pip install pyperclip
 
 **日期计算规则**：周报以本周六为结束日期，上周日为开始日期（共 7 天）
 
+## 封面图管理
+
+### 创建新封面图
+
+公众号封面图尺寸为 **900×383**（标准头条封面）。使用 Pillow 生成：
+
+```python
+from PIL import Image, ImageDraw, ImageFont
+
+W, H = 900, 383
+img = Image.new('RGB', (W, H), (15, 32, 75))  # 深蓝色背景
+draw = ImageDraw.Draw(img)
+font = ImageFont.truetype("/System/Library/Fonts/STHeiti Medium.ttc", 68)
+text = "AI Coding资讯周报"
+bbox = draw.textbbox((0, 0), text, font=font)
+draw.text(((W - (bbox[2]-bbox[0])) // 2, (H - (bbox[3]-bbox[1])) // 2 - 20), text, fill=(255, 255, 255), font=font)
+img.save("/tmp/aicoding-weekly-cover.png")
+```
+
+macOS 可用字体：`PingFang.ttc`、`STHeiti Medium.ttc`、`Hiragino Sans GB.ttc`。
+
+### 上传并更新 media_id
+
+```bash
+# 1. 获取 access_token
+TOKEN=$(curl -s "https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=$WECHAT_APPID&secret=$WECHAT_APPSECRET" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+
+# 2. 上传为永久 thumb 素材
+curl -s -F media="@/tmp/aicoding-weekly-cover.png" \
+  "https://api.weixin.qq.com/cgi-bin/material/add_material?access_token=${TOKEN}&type=thumb"
+# 返回 media_id，如: {"media_id": "-qe1bwy7r6ypdY2NjJZf6Q...", "url": "..."}
+
+# 3. 更新 generate_weekly.py 中的 WECHAT_THUMB_MEDIA_ID
+```
+
+⚠️ **必须同步更新脚本中的 `WECHAT_THUMB_MEDIA_ID`**（`scripts/generate_weekly.py` 第44行），否则后续周报仍用旧封面。
+
+### 已有封面图
+
+- **media_id**: `-qe1bwy7r6ypdY2NjJZf6Q_XDJBp3g3jmI4_74EHQqFnPFMd0YW4k6KFLIzbJiQB`
+- **设计**: 深蓝色背景 (#0F204B) + 白色主标题（68px STHeiti Medium）+ 蓝色装饰线 + 浅蓝色英文副标题
+- **创建日期**: 2026-06-21
+
 ## 注意事项
 
 - **不要降级**：必须按完整流程执行（获取数据 → 生成周报 → 发布到公众号），不得简化步骤或降低质量。遇到问题直接报告，不要自行降级处理。
