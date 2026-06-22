@@ -246,16 +246,23 @@ NOTEBOOK_NAME = "AI 资讯 V2"
 /opt/homebrew/bin/python3.14 -m notebooklm login
 ```
 
-### 飞书 Webhook 配置
+### 飞书多维表格配置
 
 ```python
-WEBHOOK_URL = "https://www.feishu.cn/flow/api/trigger-webhook/4ebcdc4fd26c38187fdd74434d17a916"
+FEISHU_BASE_TOKEN = "Tn1vbRQyraNFvAstbqicUlIJnue"
+FEISHU_TABLE_ID = "tblXp6DHjQPomXbv"
+FEISHU_FIELDS = ["title", "link", "description", "name", "updatetime"]
 ```
 
-发送字段：
-- `url`: 文章链接
-- `title`: 文章标题
-- `summary`: 生成的摘要（由大模型生成）
+通过 `lark-cli base +record-batch-create` 写入多维表格（不再使用 webhook）。
+
+| 字段 | 数据来源 |
+|------|---------|
+| title | 文章标题 |
+| link | 文章 URL |
+| description | 摘要（LLM 生成） |
+| name | 公众号文章填公众号名称；其他网站填域名；Twitter 填 `@screenName`；飞书文档填"飞书文档" |
+| updatetime | 当前时间 |
 
 ### IMA 知识库配置
 
@@ -272,8 +279,7 @@ IMA_API_BASE = "https://ima.qq.com"
 | 参数 | 说明 | 默认值 |
 |-----|------|-------|
 | `url` | 文章URL（支持多个） | - |
-| `--webhook` | 自定义飞书webhook | 内置地址 |
-| `--no-push` | 不推送到飞书，仅输出结果 | False |
+| `--no-push` | 不推送到飞书多维表格，仅输出结果 | False |
 | `--summary-length` | 摘要最大长度 | 200 |
 | `--summary-engine` | 摘要引擎：glm(默认) / rule | glm |
 | `--notebook` | 上传到 NotebookLM | False |

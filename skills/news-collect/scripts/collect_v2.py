@@ -17,7 +17,11 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 # ============ 配置 ============
-WEBHOOK_URL = "https://www.feishu.cn/flow/api/trigger-webhook/4ebcdc4fd26c38187fdd74434d17a916"
+# 飞书多维表格配置
+FEISHU_BASE_TOKEN = "Tn1vbRQyraNFvAstbqicUlIJnue"
+FEISHU_TABLE_ID = "tblXp6DHjQPomXbv"
+# +record-batch-create --json 的 fields 使用字段名
+FEISHU_FIELDS = ["title", "link", "description", "name", "updatetime"]
 NOTEBOOKLM_CMD = "notebooklm"
 NOTEBOOK_NAME = "AI 资讯 V2"
 NOTEBOOK_ID = "8c8a9ffe-89c1-4219-a6ee-cd2f9bb4f3e0"
@@ -114,6 +118,7 @@ def fetch_feishu_doc(url):
         return {
             "title": doc_title,
             "author": "",
+            "source_name": "飞书文档",
             "publish_time": "",
             "content": all_markdown.strip(),
             "url": url
@@ -181,9 +186,17 @@ def fetch_wechat_article_defuddle(url):
             
         data = json.loads(result.stdout.strip())
         
+        # 提取公众号名称（作为 source_name）
+        source_name = data.get("site_name") or ""
+        if not source_name:
+            # defuddle 可能返回 author，但那是文章作者而非公众号
+            # 通过 fetch_wechat_account_name 从页面 HTML 补充获取
+            source_name = fetch_wechat_account_name(url)
+        
         return {
             "title": data.get("title") or "未知标题",
             "author": data.get("author") or "未知作者",
+            "source_name": source_name,
             "publish_time": data.get("published") or "",
             "content": data.get("content") or "无法提取正文",
             "url": url
@@ -196,6 +209,34 @@ def fetch_wechat_article_defuddle(url):
         return {"error": "defuddle 返回格式解析失败"}
     except Exception as e:
         return {"error": f"抓取失败: {str(e)}"}
+
+
+def fetch_wechat_account_name(url):
+    """从微信文章页面提取公众号名称"""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=15)
+        response.encoding = 'utf-8'
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 方式1: og:article:tag 通常包含公众号名称
+        og_tag = soup.find('meta', property='og:article:tag')
+        if og_tag and og_tag.get('content'):
+            return og_tag.get('content')
+        
+        # 方式2: 账号信息区域 nickname class
+        nickname_el = soup.find('a', class_='rich_media_meta_nickname') or \
+                      soup.find('span', class_='rich_media_meta_nickname') or \
+                      soup.find('a', attrs={'id': 'js_name'}) or \
+                      soup.find('a', attrs={'id': 'profileBt'})
+        if nickname_el:
+            return nickname_el.get_text(strip=True)
+        
+        return ""
+    except Exception:
+        return ""
 
 
 def fetch_generic_article(url):
@@ -233,9 +274,15 @@ def fetch_generic_article(url):
                 if len(content) > 200:
                     break
         
+        # 提取网站名称（域名）
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        site_name = parsed.netloc.replace('www.', '').split('.')[0].capitalize()
+        
         return {
             "title": title,
             "author": "",
+            "source_name": site_name,
             "publish_time": "",
             "content": content,
             "url": url
@@ -322,6 +369,7 @@ def fetch_twitter_tweet(url):
         return {
             "title": title,
             "author": f"{author_name} (@{screen_name})",
+            "source_name": f"X: @{screen_name}",
             "publish_time": _parse_twitter_timestamp(tweet_data.get("createdAtISO", "")),
             "content": content,
             "url": url
@@ -766,29 +814,38 @@ def upload_to_notebooklm(file_path, title, max_retries=3, retry_delay=3):
         return False
 
 
-# ============ 飞书推送 ============
+# ============ 飞书多维表格推送 ============
 
-def push_to_feishu(url, title, summary, webhook_url=None):
-    """推送文章到飞书 webhook"""
-    webhook = webhook_url or WEBHOOK_URL
+def push_to_feishu(url, title, summary, author="", webhook_url=None):
+    """推送文章到飞书多维表格（通过 lark-cli）"""
+    import subprocess
     
-    data = {
-        "url": url,
-        "title": title,
-        "summary": summary
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    record_data = {
+        "fields": FEISHU_FIELDS,
+        "rows": [[title, url, summary, author, now]]
     }
     
     try:
-        req = urllib.request.Request(
-            webhook,
-            data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
-            headers={'Content-Type': 'application/json'},
-            method='POST'
+        result = subprocess.run(
+            [
+                "lark-cli", "base", "+record-batch-create",
+                "--base-token", FEISHU_BASE_TOKEN,
+                "--table-id", FEISHU_TABLE_ID,
+                "--as", "user",
+                "--json", json.dumps(record_data, ensure_ascii=False)
+            ],
+            capture_output=True, text=True, timeout=30
         )
         
-        with urllib.request.urlopen(req, timeout=10) as response:
-            result = json.loads(response.read().decode('utf-8'))
-            return result.get("code") == 0, result
+        resp = json.loads(result.stdout) if result.stdout else {}
+        
+        if resp.get("ok") or resp.get("data", {}).get("records"):
+            return True, resp
+        else:
+            error_msg = resp.get("error", {}).get("message", result.stderr or "未知错误")
+            return False, {"error": error_msg}
             
     except Exception as e:
         return False, {"error": str(e)}
@@ -904,7 +961,6 @@ def save_raw_markdown(title, markdown_content, output_dir=None):
 def main():
     parser = argparse.ArgumentParser(description='News Collect V2 简化版 - 支持上传到 NotebookLM')
     parser.add_argument('url', help='文章URL')
-    parser.add_argument('--webhook', help='自定义飞书webhook地址')
     parser.add_argument('--no-push', action='store_true', help='不推送到飞书，仅输出结果')
     parser.add_argument('--notebook', action='store_true', default=True, help='上传到 NotebookLM（默认开启）')
     parser.add_argument('--no-notebook', action='store_true', help='不上传到 NotebookLM')
@@ -959,14 +1015,15 @@ def main():
             if not upload_success:
                 print("⚠️ NotebookLM 上传失败，但继续其他操作")
     
-    # 5. 推送到飞书
+    # 5. 推送到飞书多维表格
     if not args.no_push:
-        print("\n[5/5] 推送到飞书...")
+        print("\n[5/5] 推送到飞书多维表格...")
+        source_name = data.get('source_name', '')
         success, response = push_to_feishu(
             args.url,
             data['title'],
             summary,
-            args.webhook
+            source_name
         )
         
         if success:
