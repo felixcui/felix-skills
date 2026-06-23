@@ -251,7 +251,7 @@ NOTEBOOK_NAME = "AI 资讯 V2"
 ```python
 FEISHU_BASE_TOKEN = "Tn1vbRQyraNFvAstbqicUlIJnue"
 FEISHU_TABLE_ID = "tblXp6DHjQPomXbv"
-FEISHU_FIELDS = ["title", "link", "description", "name", "updatetime"]
+FEISHU_FIELDS = ["title", "link", "description", "source", "updatetime"]
 ```
 
 通过 `lark-cli base +record-batch-create` 写入多维表格（不再使用 webhook）。
@@ -261,7 +261,7 @@ FEISHU_FIELDS = ["title", "link", "description", "name", "updatetime"]
 | title | 文章标题 |
 | link | 文章 URL |
 | description | 摘要（LLM 生成） |
-| name | 公众号文章填公众号名称；其他网站填域名；Twitter 填 `@screenName`；飞书文档填"飞书文档" |
+| `source` | 公众号文章填公众号名称；其他网站填域名；Twitter 填 `@screenName`；飞书文档填"飞书文档" |
 | updatetime | 当前时间 |
 
 ### IMA 知识库配置
