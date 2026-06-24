@@ -420,9 +420,36 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 2. 用 `browser_snapshot(full=True)` 获取完整页面快照
 3. 从快照中提取标题、作者、正文
 4. 手动构建 Markdown（含 frontmatter），保存到 `~/work/github/media-conent/raw/`
-5. **分发步骤**：用 `terminal()` 并行完成飞书 webhook 推送、NotebookLM 上传（ASCII 文件名）、IMA 导入
+5. 用 3 个并行的 `terminal()` 调用完成分发（见下方命令模板）
 
-> ⚠️ **不要用 `execute_code` 做分发步骤**。`execute_code` 会拦截包含 `requests.post` / `subprocess` 调用的 Python 代码（报错："runs arbitrary local Python including subprocess calls that bypass shell-string approval checks"）。改用 3 个并行的 `terminal()` 调用分别完成 webhook curl、notebooklm source add、IMA curl。
+> ⚠️ **不要用 `execute_code` 做分发步骤**。改用 3 个并行的 `terminal()` 调用。
+
+**分发命令模板（3 个并行 `terminal()`）：**
+
+```bash
+# ① NotebookLM 上传（中文文件名先 cp 为 ASCII）
+cp "/path/to/raw/中文文件名.md" /tmp/ascii-name.md
+/opt/homebrew/bin/python3.14 -m notebooklm source add /tmp/ascii-name.md --notebook "8c8a9ffe-89c1-4219-a6ee-cd2f9bb4f3e0"
+
+# ② IMA 导入
+curl -s -X POST "https://ima.qq.com/openapi/wiki/v1/import_urls" \
+  -H "Content-Type: application/json" \
+  -H "ima-openapi-clientid: $(cat ~/.config/ima/client_id)" \
+  -H "ima-openapi-apikey: $(cat ~/.config/ima/api_key)" \
+  -d '{"knowledge_base_id":"AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ=","urls":["<URL>"]}'
+```
+
+**③ 飞书多维表格推送（lark-cli）：**
+
+```bash
+lark-cli base +record-batch-create \
+  --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" \
+  --table-id "tblXp6DHjQPomXbv" \
+  --as user \
+  --json '{"fields":["title","link","description","source","updatetime"],"rows":[["标题","URL","摘要","来源","2026-06-24"]]}'
+```
+
+> **⚠️ 必须用 `--as user`**（bot 身份缺少 `base:record:create` scope）。字段和值按顺序对应 `fields` 数组。
 
 **超长文章的浏览器提取技巧**：
 - `browser_snapshot` 的 `full=true` 对 115K+ 字符文章会截断。改用 `browser_console` + `document.getElementById('js_content').innerText.substring(start, end)` 分段提取。
@@ -552,10 +579,12 @@ notebooklm source list --notebook "8c8a9ffe-89c1-4219-a6ee-cd2f9bb4f3e0"
 **修复流程**：
 1. 用 `browser_navigate` 打开 URL，获取完整页面快照
 2. 从快照中提取标题、作者、正文内容
-3. 手动构建 Markdown 文件（含 frontmatter）
-4. 用 `requests.post` 推送飞书 webhook、`terminal()` 调 NotebookLM CLI、`requests.post` 调 IMA API
+3. 手动构建 Markdown 文件（含 frontmatter），保存到 `~/work/github/media-conent/raw/`
+4. 用 3 个并行的 `terminal()` 完成分发（NotebookLM 上传 + IMA 导入 + lark-cli 多维表格推送，语法同上方"微信文章反爬"节）
 
-**注意**：这不是所有微信文章都会触发，只有部分有反爬保护的文章。大多数情况下 `collect_v2.py` 能正常抓取。
+> ⚠️ 飞书推送必须用 `--as user`（bot 缺少 `base:record:create` scope）。中文文件名 NotebookLM 上传建议先 cp 为 ASCII 名称。
+
+**注意**：这种情况较少见（约 5-10% 的公众号文章），大部分文章 requests 可正常抓取。无需为此改动 `collect_v2.py` 的默认抓取逻辑。
 
 ### NotebookLM 上传失败（综合）
 
