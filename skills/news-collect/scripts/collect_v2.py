@@ -23,8 +23,8 @@ FEISHU_TABLE_ID = "tblXp6DHjQPomXbv"
 # +record-batch-create --json 的 fields 使用字段名
 FEISHU_FIELDS = ["title", "link", "description", "source", "updatetime"]
 NOTEBOOKLM_CMD = "notebooklm"
-NOTEBOOK_NAME = "AI 资讯 V2"
-NOTEBOOK_ID = "8c8a9ffe-89c1-4219-a6ee-cd2f9bb4f3e0"
+NOTEBOOK_NAME = "AI 资讯 V3"
+NOTEBOOK_ID = "f75a961b-4b74-4dc1-a604-534119fe27a7"
 
 # IMA 知识库配置
 IMA_KB_ENABLED = True

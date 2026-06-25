@@ -11,7 +11,7 @@
 notebooklm list --json
 
 # 从 JSON 中提取目标 notebook 的 ID（例如 AI 资讯 V2）
-# 输出中 id 字段就是完整 UUID，如 8c8a9ffe-89c1-4219-a6ee-cd2f9bb4f3e0
+# 输出中 id 字段就是完整 UUID，如 f75a961b-4b74-4dc1-a604-534119fe27a7
 ```
 
 ## 2. 比对本地文章 vs NotebookLM 已有 source
@@ -106,7 +106,7 @@ Google 瞬态限流有时持续较长，简单的 10s 冷却不够：
 3. 两轮重试后仍失败才考虑 `notebooklm login` 认证问题
 
 ```bash
-NB_ID="8c8a9ffe-89c1-4219-a6ee-cd2f9bb4f3e0"
+NB_ID="f75a961b-4b74-4dc1-a604-534119fe27a7"
 TODAY=$(date +%Y-%m-%d)
 RAW_DIR="/Users/felix/work/github/media-conent/raw"
 
