@@ -24,7 +24,7 @@ FEISHU_TABLE_ID = "tblXp6DHjQPomXbv"
 FEISHU_FIELDS = ["title", "link", "description", "source", "updatetime"]
 NOTEBOOKLM_CMD = "notebooklm"
 NOTEBOOK_NAME = "AI 资讯 V3"
-NOTEBOOK_ID = "f75a961b-4b74-4dc1-a604-534119fe27a7"
+NOTEBOOK_ID = "b08626a7-cda5-4dd2-b0e7-536eafb48274"
 
 # IMA 知识库配置
 IMA_KB_ENABLED = True
