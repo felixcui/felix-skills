@@ -1,0 +1,4 @@
+interface:
+  display_name: "Felix WeChat Post"
+  short_description: "Generate cover image and publish WeChat drafts"
+  default_prompt: "Use $felix-wechat-post to generate a WeChat cover from the title and publish the article as a draft."
