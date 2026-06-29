@@ -589,6 +589,16 @@ notebooklm source list --notebook "b08626a7-cda5-4dd2-b0e7-536eafb48274"
 
 **注意**：这种情况较少见（约 5-10% 的公众号文章），大部分文章 requests 可正常抓取。无需为此改动 `collect_v2.py` 的默认抓取逻辑。
 
+### YouTube 视频摘要为空导致飞书重复记录
+
+YouTube 视频页面正文有限，`collect_v2.py` 抓取后 GLM 可能生成 0 字摘要。脚本仍会将空摘要记录推送到飞书多维表格。如果后续用 `lark-cli base +record-batch-create` 手动补推带摘要的记录，会产生**两条重复记录**。
+
+**诊断**：脚本输出 `"summary": ""` 且飞书表格中出现同标题两条记录，一条 description 为空。
+
+**修复**：用 `lark-cli base +record-search --keyword "关键词" --search-field title --as user` 找到两条记录，删除空摘要的那条（`lark-cli base +record-delete --record-id <id> --yes --as user`）。保留有摘要的版本。
+
+**预防**：遇到 YouTube URL 且摘要为空时，不要用 `lark-cli base +record-batch-create` 补推，而是先搜索是否已有记录，如果有则用 `record-update` 更新 description 字段。
+
 ### NotebookLM 上传失败（综合）
 
 NotebookLM 上传有约 20-30% 的偶发失败率（空错误信息），脚本已内置自动重试（3次，递增等待 3s/6s）。即使重试后仍失败的文章，**不需要立即手动补传**——每日 21:00 例行维护 cron 任务（job_id: 60bbd91f0554）的「维护项 4：NotebookLM 补传失败文章」会自动检测并补传当日遗漏。
@@ -674,6 +684,10 @@ notebooklm source delete-by-title "notebooklm_upload_0.md" -y
 # 如果报 "matches 2 sources" → 提取完整 ID
 notebooklm source delete "<full-uuid-from-error>"
 ```
+
+## 每日维护 Cron
+
+每日 21:00 自动执行 4 项维护（Wiki同步、Git提交、IMA清理、NotebookLM补传）。详见 [references/daily-maintenance-cron.md](references/daily-maintenance-cron.md)。
 
 ## 文件结构
 

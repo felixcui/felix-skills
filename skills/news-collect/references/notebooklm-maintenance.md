@@ -106,30 +106,26 @@ Google 瞬态限流有时持续较长，简单的 10s 冷却不够：
 3. 两轮重试后仍失败才考虑 `notebooklm login` 认证问题
 
 ```bash
-NB_ID="f75a961b-4b74-4dc1-a604-534119fe27a7"
+NB_ID="b08626a7-cda5-4dd2-b0e7-536eafb48274"
 TODAY=$(date +%Y-%m-%d)
 RAW_DIR="/Users/felix/work/github/media-conent/raw"
 
-i=1
 SUCCESS=0
 FAIL=0
 
 for f in "$RAW_DIR"/${TODAY}_*.md; do
   [ -f "$f" ] || continue
-  tmp="/tmp/nlm_upload_${TODAY}_${i}.md"
-  cp "$f" "$tmp"
   sleep 5
 
-  result=$(notebooklm source add "$tmp" --notebook "$NB_ID" 2>&1)
+  result=$(notebooklm source add "$f" --notebook "$NB_ID" 2>&1)
+  basename_f=$(basename "$f")
   if echo "$result" | grep -qi "error\|fail"; then
-    echo "FAIL: upload_${i}.md - $result"
+    echo "FAIL: $basename_f - $result"
     FAIL=$((FAIL + 1))
   else
-    echo "OK: upload_${i}.md"
+    echo "OK: $basename_f"
     SUCCESS=$((SUCCESS + 1))
   fi
-  rm -f "$tmp"
-  i=$((i + 1))
 done
 
 echo "SUCCESS=$SUCCESS FAIL=$FAIL"
