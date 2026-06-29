@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Generate a deterministic WeChat article cover: solid deep-blue background + centered bold white title.
+Generate a deterministic WeChat article cover: solid deep-blue background + centered bold white title. Long titles auto-wrap to at most 2 lines; the font size shrinks until the title fits within --max-ratio width in ≤ 2 lines.
 
 Usage:
   generate_wechat_cover.sh --title "文章标题" --out path/to/cover.png [options]
@@ -76,23 +76,40 @@ print(int($WIDTH * $MAX_RATIO))
 PY
 )
 POINT=86
+LINE_H=0
 while [[ $POINT -gt 24 ]]; do
-  dims=$(magick -background none -fill white -font "$FONT" -pointsize "$POINT" label:"$TITLE" -format "%w %h" info:)
-  read -r TW TH <<< "$dims"
-  if [[ "$TW" -le "$MAX_WIDTH" ]]; then
-    break
-  fi
+  # 单行渲染：测宽度 SW 与行高 SH
+  single=$(magick -background none -fill white -font "$FONT" -pointsize "$POINT" label:"$TITLE" -format "%w %h" info:)
+  read -r SW SH <<< "$single"
+  LINE_H=$SH
+  [[ "$SW" -le "$MAX_WIDTH" ]] && break                          # 单行即可放下
+  # 限宽自动换行，测换行后所需总高度；按行高折算行数
+  wrapped=$(magick -background none -fill white -font "$FONT" -pointsize "$POINT" -size "${MAX_WIDTH}x" caption:"$TITLE" -format "%w %h" info:)
+  read -r _ WH <<< "$wrapped"
+  rows=$(( (WH + SH / 2) / SH ))                                # 行数（按行高四舍五入）
+  [[ "$rows" -le 2 ]] && break                                  # 最多两行
   POINT=$((POINT - 2))
 done
 
+# 展示文本：超长标题在最小字号仍超过两行时，逐字截断并加省略号，硬性保证 ≤ 2 行
+DISPLAY="$TITLE"
+final=$(magick -background none -fill white -font "$FONT" -pointsize "$POINT" -size "${MAX_WIDTH}x" caption:"$TITLE" -format "%h" info:)
+rows=$(( (final + LINE_H / 2) / LINE_H ))
+if [[ "$rows" -gt 2 ]]; then
+  n=${#TITLE}
+  for (( k=n; k>=1; k-- )); do
+    cand="${TITLE:0:k}…"
+    ch=$(magick -background none -fill white -font "$FONT" -pointsize "$POINT" -size "${MAX_WIDTH}x" caption:"$cand" -format "%h" info:)
+    r2=$(( (ch + LINE_H / 2) / LINE_H ))
+    [[ "$r2" -le 2 ]] && { DISPLAY="$cand"; break; }
+  done
+fi
+
+# 背景 + caption 自动换行文本层（限宽 MAX_WIDTH，裁去透明边后严格居中合成）
 magick -size "${WIDTH}x${HEIGHT}" xc:"$BG" \
-  -font "$FONT" \
-  -pointsize "$POINT" \
-  -fill white \
-  -stroke white \
-  -strokewidth 1 \
-  -gravity center \
-  -annotate +0+0 "$TITLE" \
+  \( -background none -fill white -stroke white -strokewidth 1 \
+     -font "$FONT" -pointsize "$POINT" -size "${MAX_WIDTH}x" caption:"$DISPLAY" -trim +repage \) \
+  -gravity center -composite \
   "$OUT"
 
 printf '%s\n' "$OUT"
