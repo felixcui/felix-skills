@@ -142,7 +142,7 @@ import json, glob, os, datetime, re
 
 def normalize_title(s):
     """Normalize both local filenames and NotebookLM titles for comparison."""
-    s = re.sub(r'[""？：:！!@＠+\*\(\)\[\]{}]', '', s)  # strip common special chars
+    s = re.sub(r'[""？：:！!@＠+\*\(\)\[\]{}，。、——…—]', '', s)  # strip common special chars incl. CJK punctuation
     s = re.sub(r'\s+', '', s)  # strip whitespace
     return s[:40]  # truncate to avoid false mismatches from long suffixes
 
