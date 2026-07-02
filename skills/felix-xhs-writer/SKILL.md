@@ -18,9 +18,9 @@ description: 将本地 Markdown 文章转换为小红书风格文案，同时生
 | 优先级 | 方式 | 示例 |
 |--------|------|------|
 | 1 | 用户在参数中明确指定目录 | `/felix-xhs-writer <文件> --output-dir ~/Desktop/xhs` |
-| 2 | 默认：skill 内部的 `output/` 子目录 | `felix-xhs-writer/output/` |
+| 2 | 默认：输入 Markdown 文件所在目录 | 输入 `draft/article.md` 则输出到 `draft/` |
 
-> 执行前，先向用户确认使用何种输出目录，若用户未特别说明则使用默认目录。
+> 若用户已经明确指定输出目录，直接使用指定目录；否则不要追问，默认输出到输入 Markdown 文件所在目录。
 
 ## 执行步骤
 
@@ -28,10 +28,13 @@ description: 将本地 Markdown 文章转换为小红书风格文案，同时生
 
 根据上方优先级规则确定 `$OUTPUT_DIR`：
 - 若用户指定了目录，使用用户指定的路径（支持 `~` 和相对路径）
-- 否则默认为：`<本 SKILL.md 所在目录>/output/`（即 `felix-xhs-writer/output/`）
+- 否则默认为：输入 Markdown 文件所在目录，即 `dirname "$INPUT_FILE"`。例如输入 `draft/article.md`，输出文件也保存到 `draft/`。
 
 确保目录存在：
 ```bash
+if [ -z "$OUTPUT_DIR" ]; then
+  OUTPUT_DIR="$(dirname "$INPUT_FILE")"
+fi
 mkdir -p "$OUTPUT_DIR"
 ```
 
@@ -289,14 +292,14 @@ INFOGRAPHIC_FILE="$OUTPUT_DIR/${BASENAME}_cover-infographic.png"
 - **强调**: 💪 ⚡ 🌟 💎 🚀
 - **总结**: 📝 ✅ 💡 🎁
 
-## 文件存储结构
+## 默认文件存储结构
 
 ```
-felix-xhs-writer/
-└── output/                                         # 默认输出目录（建议加入 .gitignore）
-    ├── YYYY-MM-DD_{文章标题}_xhs.md                # 小红书文案
-    ├── YYYY-MM-DD_{文章标题}_cover-points.md       # 封面图要点 / 图片生成提示词
-    └── YYYY-MM-DD_{文章标题}_cover-infographic.png # 封面信息图
+输入文件所在目录/
+├── 原文章.md
+├── YYYY-MM-DD_{文章标题}_xhs.md                # 小红书文案
+├── YYYY-MM-DD_{文章标题}_cover-points.md       # 封面图要点 / 图片生成提示词
+└── YYYY-MM-DD_{文章标题}_cover-infographic.png # 封面信息图
 ```
 
 > 注：`YYYY-MM-DD` 为当前日期，`{文章标题}` 从文件名自动提取
@@ -308,5 +311,5 @@ felix-xhs-writer/
 - 标签要与内容高度相关
 - 避免过度营销化，保持内容真实
 - 技术类内容保持专业性，不过度娱乐化
-- **输出目录**：默认为 `felix-xhs-writer/output/`，可在调用时通过 `--output-dir` 参数自定义
+- **输出目录**：默认与输入 Markdown 文件所在目录保持一致；可在调用时通过 `--output-dir` 参数自定义
 - **信息图生成**：必须通过 Codex 图片生成工具完成；不得使用本地脚本或其他方式生成替代图片

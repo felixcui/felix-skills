@@ -12,6 +12,7 @@ description: 基于一篇本地 Markdown 文章生成 X（Twitter / 推特）动
 ## 参数
 
 - `$ARGUMENTS`：本地 Markdown 文件路径（必填），以及可选的输出目录路径
+  - 可选参数：`--output-dir <目录>`，用于指定输出目录
   - 例：`felix-x-writer ~/Desktop/my-post.md`
   - 例：`felix-x-writer ~/Desktop/my-post.md --output-dir ~/Desktop/x`
 
@@ -39,18 +40,21 @@ X 的字符限制是 **280 权重**，但不是"280 个字"——它按字符类
 
 | 优先级 | 方式 | 示例 |
 |--------|------|------|
-| 1 | 用户参数明确指定 | `felix-x-writer <文件> --output-dir ~/Desktop/x` |
-| 2 | 默认：skill 内部 `output/` 子目录 | `felix-x-writer/output/` |
+| 1 | 用户参数明确指定 `--output-dir` | `felix-x-writer <文件> --output-dir ~/Desktop/x` |
+| 2 | 默认：输入 Markdown 文件所在目录 | 输入 `draft/article.md` 则输出到 `draft/` |
 
-> 执行前先向用户确认输出目录，未特别说明则用默认目录。
+> 若用户指定 `--output-dir`，直接使用该目录；否则不要追问，默认输出到输入 Markdown 文件所在目录。
 
 ## 执行步骤
 
 ### 步骤 0：确定输出目录
 
 ```bash
-# 默认为 SKILL.md 同级 output/
-OUTPUT_DIR="<本 SKILL.md 所在目录>/output"
+# 解析可选参数：--output-dir <目录>
+# 若用户未指定，则默认与输入 Markdown 文件所在目录保持一致
+if [ -z "$OUTPUT_DIR" ]; then
+  OUTPUT_DIR="$(dirname "$INPUT_FILE")"
+fi
 mkdir -p "$OUTPUT_DIR"
 ```
 
@@ -156,7 +160,8 @@ python3 scripts/count_chars.py -f /tmp/x-thread-draft.txt
 
 ```bash
 BASENAME=$(basename "${INPUT_FILE%.md}")
-X_FILE="$OUTPUT_DIR/${BASENAME}_x.md"
+DATE=$(date +%F)
+X_FILE="$OUTPUT_DIR/${DATE}_${BASENAME}_x.md"
 # 写入文件内容
 ```
 
@@ -259,8 +264,14 @@ X_FILE="$OUTPUT_DIR/${BASENAME}_x.md"
 ```
 felix-x-writer/
 ├── SKILL.md
-├── scripts/
-│   └── count_chars.py            # X 字符权重校验脚本
-└── output/                       # 默认输出目录（建议加入 .gitignore）
-    └── YYYY-MM-DD_{文章标题}_x.md
+└── scripts/
+    └── count_chars.py            # X 字符权重校验脚本
+```
+
+默认输出文件与输入 Markdown 文件保存在同一目录：
+
+```
+输入文件所在目录/
+├── 原文章.md
+└── YYYY-MM-DD_{文章标题}_x.md
 ```
