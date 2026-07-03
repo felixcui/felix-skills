@@ -398,7 +398,7 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 
 ### 飞书 Wiki 链接抓取不完整
 
-`collect_v2.py` 对飞书 Wiki 链接（`my.feishu.cn/wiki/` 或 `waytoagi.feishu.cn/wiki/`）可能抓取不完整（需要登录态），表现为文件只有十几行、标题为"未知标题"。
+`collect_v2.py` 对飞书 Wiki 链接（`my.feishu.cn/wiki/`、`waytoagi.feishu.cn/wiki/` 或 `bytedance.larkoffice.com/wiki/`）可能抓取不完整（需要登录态），表现为文件只有十几行、标题为"未知标题"。
 
 **解决流程**：
 1. 用 `lark-cli docs +fetch --doc "<token或URL>" --format json --limit 10000` 获取完整内容
