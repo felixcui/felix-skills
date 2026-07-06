@@ -6,15 +6,40 @@
 
 ⚠️ **中文名匹配失败**：`notebooklm source list --notebook "AI 资讯 V2"` 会报找不到。必须使用 UUID。
 
+⚠️ **重复笔记本名称检测**：`notebooklm list` 可能返回多个同名笔记本（实测存在两个"AI 资讯 V3"，ID 分别为 `b08626a7` 和 `f75a961b`）。选最近 updated 的作为活跃笔记本，同名残留可能是重建后未清理的旧笔记本。
+
 ```bash
 # 获取完整 notebook 列表（含完整 UUID）
-notebooklm list --json
+notebooklm list
 
-# 从 JSON 中提取目标 notebook 的 ID（例如 AI 资讯 V2）
-# 输出中 id 字段就是完整 UUID，如 f75a961b-4b74-4dc1-a604-534119fe27a7
+# 识别同名条目 — 选更新日期最新的那个
+# 示例：两个 "AI 资讯 V3" → b08626a7(2026-07-05) 和 f75a961b(2026-06-26) → 选 b08626a7
 ```
 
 ## 2. 比对本地文章 vs NotebookLM 已有 source
+
+### 方案 A：使用 `notebooklm metadata`（推荐，更可靠）
+
+`notebooklm source list --json` 频繁返回空 `Error:`（Google 端瞬态问题），此时 `notebooklm metadata` 是更好的替代方案。它直接显示完整标题（不含特殊字符的归一化版本，已去除 `"` 引号、`？`问号、`：`冒号、`@`符号等），且不需要 JSON 解析：
+
+```bash
+notebooklm metadata --notebook "<FULL_UUID>" 2>&1 | grep "YYYY-MM-DD"
+```
+
+输出示例：
+```
+  106.  [markdown]  2026-07-06_Codeischeap.Dontwriteany.AINative程序员如何提升五倍coding效率.md
+  108.  [markdown]  2026-07-06_Superpowers6.0发布让AI自己优化自己Token省了60.md
+```
+
+标题已被 CLI 归一化（去除了特殊字符），与本地文件名前缀匹配即可。同时首行显示总 source 数：`Sources (109):`。
+
+```bash
+# 快速比对：grep 今日前缀
+notebooklm metadata --notebook "<FULL_UUID>" 2>&1 | grep "^$(date +%Y-%m-%d)"
+```
+
+### 方案 B：使用 `--json`（备选，当方案 A 不够时）
 
 ```bash
 # 列出 notebook 所有 source（含标题）
@@ -39,6 +64,8 @@ for i, line in enumerate(lines):
         break
 data = json.loads(''.join(lines[json_start:]))
 ```
+
+⚠️ `--json` 模式可能返回 `{"error": true, "code": "ERROR", "message": ""}` 而不是合法 JSON（Google 端瞬态限流）。如果连续 3 次重试仍为空 Error，切换回方案 A。不要因此误判为认证过期。
 
 ## 3. 清理残留与异常 source
 
@@ -104,6 +131,9 @@ Google 瞬态限流有时持续较长，简单的 10s 冷却不够：
 1. 首次失败后等 10s 重试
 2. 如果仍然失败，等 **30s** 再重试（不要连续短间隔重试）
 3. 两轮重试后仍失败才考虑 `notebooklm login` 认证问题
+
+> 2026-07-06 实测：单篇失败后等 10s 重试即成功（无需 30s 冷却）。10s 足以应对轻度瞬态限流，30s 针对更严重的限流。推荐先用 10s。<br>
+> 如果首次上传的 5 篇中有 0 篇成功，直接切 30s 冷却跳过 10s 阶段。
 
 ```bash
 NB_ID="b08626a7-cda5-4dd2-b0e7-536eafb48274"

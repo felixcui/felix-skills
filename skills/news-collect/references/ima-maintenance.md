@@ -19,7 +19,9 @@ curl -s -X POST "https://ima.qq.com/openapi/wiki/v1/import_urls" \
 ```
 
 返回 `code:51`（URL 列表不能为空）= 认证正常。
-返回 `code:200002` = header 名错误。
+返回 `code:200002`（msg: "skill auth failed"）— 两种可能原因：
+  - **header 名错误**：确认使用 `ima-openapi-clientid` / `ima-openapi-apikey`（不是 `X-Client-Id` / `X-Api-Key`）
+  - **凭证过期/撤销**：需登录 IMA 平台重新获取 API Key，更新 `~/.config/ima/client_id` 和 `api_key`
 返回 HTTP 404 = 端点不存在或已下线。
 
 ### ⚠️ 已知问题：部分 API 端点返回 404
