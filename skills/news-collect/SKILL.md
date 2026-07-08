@@ -330,6 +330,7 @@ IMA_API_BASE = "https://ima.qq.com"
 | GLM 超时 | `HTTPSConnectionPool: Read timed out` | 自动降级到 hongmacc |
 | GLM 输出分析过程 | `⚠️ GLM 返回无效内容，尝试 hongmacc...` | 自动降级到 hongmacc |
 | GLM 返回 `None` | `TypeError: object of type 'NoneType'` | 自动降级到 hongmacc |
+| GLM 429 配额耗尽 | `Error code: 429 - '您已达到每周/每月使用上限'` | 自动降级到 hongmacc/规则；有明确重置时间，重置后自动恢复 |
 | hongmacc 也失败 | 极少见 | 降级到规则摘要 |
 
 **无需手动干预**——脚本已内置三级降级。如需强制使用规则引擎：
@@ -395,6 +396,8 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 3. 失败重试 2 次
 
 如连续多次失败，可能是认证过期，需手动执行 `/opt/homebrew/bin/python3.14 -m notebooklm login`。
+
+**⚠️ 双失败死胡同**：如果白天上传失败且夜间维护也失败（如 Google API 侧故障、`notebooklm list` 返回空 Error），该文章会**静默丢失**——再无自动补传机会，直到下次维护巡检（次日 21:00）才可能被检测到。核心信号：维护任务报告 `❌ NotebookLM补传: Google API 侧故障` 或 `notebooklm list 返回 Error`。此时需在「每日工作总结」中报告为异常事项，提示用户该文章仍未同步到 NotebookLM。
 
 ### 飞书 Wiki 链接抓取不完整
 

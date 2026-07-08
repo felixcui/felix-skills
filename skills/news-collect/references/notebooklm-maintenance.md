@@ -214,6 +214,23 @@ temp_named = [src for src in data.get('sources', [])
 
 ## 5. 已知限制与坑
 
+### ⚠️ Google API 侧故障 — 整个维护项停摆
+
+当 maintenance 执行到 NotebookLM 补传步骤时，如果 `notebooklm list` / `notebooklm metadata` / `notebooklm source list --json` **全部**持续返回空 `Error:`或 `{"error": true}`，这是 Google API 侧故障，**不是认证过期**。特征：
+- 所有 NotebookLM 操作（list、add、metadata）均失败
+- `notebooklm doctor` 可能正常通过（认证没问题）
+- 与瞬态限流不同：限流是偶发单次失败，API 故障是现象面持续不可用
+
+**处理**：
+1. 不要尝试 `notebooklm login` — 认证不是问题
+2. 在维护报告中标记 `❌ NotebookLM补传: Google API 侧故障，延至下次巡检`
+3. 该笔记本今日所有缺失文章只能等待次日 21:00 维护自动补传
+4. 在「每日工作总结」中列为异常事项，告知用户哪些文章仍未同步
+
+**2026-07-07 实测**：Google API 故障持续整个 maintenance 窗口（`notebooklm list` 返回 Error），次日重新运行 NotebookLM 步骤即可恢复。此故障通常为瞬态（数小时级），用户无需手动介入。
+
+---
+
 ### ⚠️ 不要用临时文件名上传
 
 用 `cp "$f" /tmp/nlm_upload_1.md` 再上传，会在 NotebookLM 中创建标题为 `nlm_upload_1.md` 的 source。这不仅无法和本地文件名匹配，还会在后续维护中产生无法识别的垃圾条目。
