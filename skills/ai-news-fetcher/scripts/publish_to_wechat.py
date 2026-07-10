@@ -13,10 +13,13 @@ AI 资讯发布到微信公众号（使用 baoyu-markdown-to-html）
 import argparse
 import sys
 import os
+import json
+import re
 from pathlib import Path
 from datetime import datetime
 import subprocess
 import importlib.util
+import requests
 
 # ========== 路径定义（基于脚本位置的相对路径） ==========
 # 脚本所在目录: ai-news-fetcher/scripts/
@@ -49,6 +52,12 @@ NEWS_OUTPUT_DIR = Path(os.getenv('NEWS_OUTPUT_DIR', str(SKILL_ROOT / 'output')))
 # 默认封面图素材ID
 #DEFAULT_THUMB_MEDIA_ID = "qxQUqgd9fe1MaWRFFohGgo8SIofgUyArMyHRseRKpcGrV1yW3yBRRjrd_0Kj41uF"
 DEFAULT_THUMB_MEDIA_ID = "-qe1bwy7r6ypdY2NjJZf6bOjFVbsw1hQuaqDpmFowfkp5C90wR73k_lCJlKP2IXe"
+
+# 飞书群 webhook URL（推送 AI 资讯日报到飞书群）
+FEISHU_NEWS_WEBHOOK = os.getenv(
+    'FEISHU_NEWS_WEBHOOK',
+    'https://open.feishu.cn/open-apis/bot/v2/hook/63c93d3f-aa99-482c-8de6-bb665acdce8c'
+)
 
 
 def _load_module(name: str, path: Path):
@@ -262,6 +271,131 @@ class WeChatNewsPublisher:
         
         output_path.write_text(markdown_content, encoding='utf-8')
         print(f"💾 Markdown 已保存: {output_path}")
+
+    def push_to_feishu(self, markdown_content: str) -> bool:
+        """
+        将资讯摘要推送到飞书群 webhook。
+        
+        解析 Markdown 中的分类和文章，生成飞书富文本消息格式推送。
+        飞书消息不支持 markdown 表格，使用 emoji + 加粗列表格式。
+        
+        Args:
+            markdown_content: 资讯 Markdown 内容
+            
+        Returns:
+            是否推送成功
+        """
+        if not FEISHU_NEWS_WEBHOOK:
+            print("⚠️ 未配置 FEISHU_NEWS_WEBHOOK，跳过飞书推送")
+            return False
+        
+        print("📨 正在推送资讯到飞书群...")
+        
+        today = datetime.now().strftime('%Y.%m.%d')
+        
+        # 解析 Markdown：提取分类和文章
+        # 格式: ## AI 资讯日报 / ### 🏷️ 分类名（N 条） / 1. [标题](url) `来源`
+        lines = markdown_content.strip().split('\n')
+        
+        categories = []  # [(emoji_name, count, articles)]
+        current_category = None
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # 匹配分类行: ### 🏷️ 分类名（N 条）
+            cat_match = re.match(r'^###\s+(.+?)[（(](\d+)\s*条[)）]$', line)
+            if cat_match:
+                current_category = {
+                    'name': cat_match.group(1),
+                    'count': int(cat_match.group(2)),
+                    'articles': []
+                }
+                categories.append(current_category)
+                continue
+            
+            # 匹配文章行: 1. [标题](url) `来源`
+            if current_category:
+                article_match = re.match(r'^\d+\.\s+\[(.+?)\]\((.+?)\)\s+`(.+?)`$', line)
+                if article_match:
+                    current_category['articles'].append({
+                        'title': article_match.group(1),
+                        'url': article_match.group(2),
+                        'source': article_match.group(3)
+                    })
+        
+        if not categories:
+            print("⚠️ 未解析到任何分类，跳过飞书推送")
+            return False
+        
+        # 统计总数
+        total_articles = sum(c['count'] for c in categories)
+        
+        # 构建飞书富文本消息
+        # 飞书消息使用 post 格式，每个分类一个卡片，文章用文本+链接
+        feishu_lines = []
+        feishu_lines.append(f"📰 AI 资讯日报 - {today}（共 {total_articles} 条）\n")
+        
+        for cat in categories:
+            feishu_lines.append(f"{cat['name']}：{cat['count']} 条")
+            for i, article in enumerate(cat['articles'], 1):
+                feishu_lines.append(f"  {i}. <a href=\"{article['url']}\">{article['title']}</a>（{article['source']}）")
+            feishu_lines.append("")  # 分类间空行
+        
+        content_text = '\n'.join(feishu_lines).strip()
+        
+        # 构建飞书 webhook payload
+        payload = {
+            "msg_type": "post",
+            "content": {
+                "post": {
+                    "zh_cn": {
+                        "title": f"📰 AI 资讯日报 - {today}",
+                        "content": []
+                    }
+                }
+            }
+        }
+        
+        # 构建内容块
+        for cat in categories:
+            # 分类标题行
+            payload["content"]["post"]["zh_cn"]["content"].append([
+                {"tag": "text", "text": f"\n{cat['name']}：{cat['count']} 条\n"}
+            ])
+            # 文章列表
+            for i, article in enumerate(cat['articles'], 1):
+                payload["content"]["post"]["zh_cn"]["content"].append([
+                    {"tag": "text", "text": f"  {i}. "},
+                    {"tag": "a", "text": article['title'], "href": article['url']},
+                    {"tag": "text", "text": f"（{article['source']}）\n"}
+                ])
+        
+        try:
+            resp = requests.post(
+                FEISHU_NEWS_WEBHOOK,
+                json=payload,
+                timeout=30,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if resp.status_code == 200:
+                result = resp.json()
+                if result.get('code', -1) == 0:
+                    print(f"✅ 飞书群推送成功！共 {total_articles} 条资讯")
+                    return True
+                else:
+                    print(f"⚠️ 飞书推送返回错误: {result}")
+                    return False
+            else:
+                print(f"❌ 飞书推送 HTTP 错误: {resp.status_code} {resp.text}")
+                return False
+                
+        except requests.RequestException as e:
+            print(f"❌ 飞书推送网络错误: {e}")
+            return False
     
     def create_and_publish(self, days: int = 1, cover_image: str = None, thumb_media_id: str = None, create_only: bool = False) -> str:
         """创建并发布资讯"""
@@ -274,6 +408,9 @@ class WeChatNewsPublisher:
         
         # 保存 Markdown 文件到输出目录
         self._save_markdown(markdown_content)
+        
+        # 推送到飞书群
+        self.push_to_feishu(markdown_content)
         
         # 转换为 HTML
         html_content = self.convert_to_html(markdown_content)
