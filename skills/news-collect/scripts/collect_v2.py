@@ -962,7 +962,7 @@ def main():
     parser = argparse.ArgumentParser(description='News Collect V2 简化版 - 支持上传到 NotebookLM')
     parser.add_argument('url', help='文章URL')
     parser.add_argument('--no-push', action='store_true', help='不推送到飞书，仅输出结果')
-    parser.add_argument('--notebook', action='store_true', default=True, help='上传到 NotebookLM（默认开启）')
+    parser.add_argument('--notebook', action='store_true', help='上传到 NotebookLM（默认不上传）')
     parser.add_argument('--no-notebook', action='store_true', help='不上传到 NotebookLM')
     parser.add_argument('--summary-length', type=int, default=200, help='摘要长度（默认200字）')
     parser.add_argument('--summary-engine', choices=['glm', 'rule'], default='glm', help='摘要引擎：glm(默认) | rule')

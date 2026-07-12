@@ -1,6 +1,6 @@
 ---
 name: news-collect
-description: "一站式资讯收集工具 V2：抓取文章 → 生成摘要 → 推送飞书 → 上传NotebookLM → 生成多种格式。支持微信公众号、普通网页、Twitter/X，完全自动化处理。"
+description: "一站式资讯收集工具 V2：抓取文章 → 生成摘要 → 推送飞书 → 生成多种格式。支持微信公众号、普通网页、Twitter/X，完全自动化处理。NotebookLM 通过 --notebook 参数可选启用。"
 metadata: { "openclaw": { "emoji": "📰", "requires": { "bins": ["python3"] } } }
 ---
 
@@ -15,7 +15,7 @@ metadata: { "openclaw": { "emoji": "📰", "requires": { "bins": ["python3"] } }
 - ✅ **批量处理**：支持从文件批量处理多个URL
 - ✅ **改进的微信抓取**：使用requests+BeautifulSoup，更稳定
 - ✅ **智能输出控制**：灵活选择推送目标（飞书/NotebookLM/两者）
-- ✅ **默认投递**：在无特殊说明时，默认同时推送到飞书、IMA 和 NotebookLM
+- ✅ **默认投递**：在无特殊说明时，默认推送到飞书和 IMA，NotebookLM 需通过 `--notebook` 参数显式启用
 
 ## 功能特点
 
@@ -40,13 +40,13 @@ pip3 install requests beautifulsoup4 pyyaml
 
 ## 使用方法
 
-### 基础用法（抓取 + 摘要 + 飞书/IMA/NotebookLM 全量分发）
+### 基础用法（抓取 + 摘要 + 飞书/IMA 分发）
 
 ```bash
 python3 scripts/collect_v2.py <文章URL>
 ```
 
-> 默认情况下，如无额外说明，脚本会将结果同时推送到飞书、IMA 和 NotebookLM。
+> 默认情况下，脚本会将结果推送到飞书和 IMA，不上传 NotebookLM。如需上传 NotebookLM，请加 `--notebook` 参数。
 
 示例：
 ```bash
@@ -285,7 +285,7 @@ IMA_API_BASE = "https://ima.qq.com"
 | `--no-push` | 不推送到飞书多维表格，仅输出结果 | False |
 | `--summary-length` | 摘要最大长度 | 200 |
 | `--summary-engine` | 摘要引擎：glm(默认) / rule | glm |
-| `--notebook` | 上传到 NotebookLM | False |
+| `--notebook` | 上传到 NotebookLM（默认不上传） | False |
 | `--format` | NotebookLM 生成格式 | - |
 | `--batch` | 批量处理URL文件 | - |
 
@@ -302,14 +302,13 @@ IMA_API_BASE = "https://ima.qq.com"
 7. **推送飞书** - 推送摘要到飞书 webhook
 8. **添加 IMA** - 添加文章 URL 到 IMA 知识库（所有公网 URL 均尝试）
 
-### 标准流程（默认全量分发）
+### 标准流程（默认：飞书 + IMA）
 
 1. **抓取内容**
 2. **生成摘要**
 3. **创建 Markdown**
-4. **上传 NotebookLM**
-5. **推送飞书**
-6. **添加 IMA**（公众号 / 飞书文档 / 通用 URL；X/Twitter 自动跳过）
+4. **推送飞书**
+5. **添加 IMA**（公众号 / 飞书文档 / 通用 URL；X/Twitter 自动跳过）
 
 > ⚠️ Wiki 同步已从收集流程中移除，改为每日例行维护任务（21:00）统一批量同步。
 
