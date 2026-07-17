@@ -187,17 +187,33 @@ cd ~/.hermes/skills/felix-skills/skills/ai-news-fetcher && python3 scripts/publi
 
 ### ⚠️ GLM API 超时保护
 
-当前 `.env` 配置使用 `glm-5-turbo`（智谱 AI 开放平台），该 API 有两种失败模式：
+当前 `.env` 配置使用 `glm-5-turbo`（智谱 AI 开放平台），该 API 有三种失败模式：
 
 | 模式 | 表现 | 影响 |
 |------|------|------|
 | **限流（429）** | 返回 `Error code: 429`，脚本自动降级为关键词分类 | 无害，降级自动发生 |
-| **挂起超时** | API 无响应，OpenAI client 在 60 秒后超时，脚本自动降级为关键词分类 | 无害，降级自动发生 |
+| **挂起超时** | API 无响应，OpenAI client 在 **120 秒**后超时，脚本自动降级为关键词分类 | ⚠️ 120s 很长，加上后续步骤可能超过 cron 的 300s 总超时 |
 | **摘要质量差** | GLM 返回分析过程（如 "1. Analyze the Request..."）而非正式摘要 | 摘要不可用，需降级为规则引擎 |
 
-**默认使用 `method="ai"`（大模型分类），已设置 60 秒超时保护（`httpx.Timeout(60.0, connect=10.0)`），失败自动降级为关键词分类。**
+**代码实际超时设置**（`fetch_ai_news.py` 第 131 行）：`httpx.Timeout(120.0, connect=15.0)`，**不是** SKILL.md 之前误写的 60s。
+
+**默认使用 `method="ai"`（大模型分类），失败自动降级为关键词分类。**
 - `method="ai"` 使用 OpenAI 兼容 API 进行智能分类，超时或失败时自动降级
 - `method="rule"` 仅用纯关键词分类，可在 AI API 不可用时手动指定
+
+#### ⚠️ Cron 超时紧急修复（2026-07-17 验证）
+
+当智谱 API 挂起导致 cron 超时时，**临时降级为关键词分类**的方法：
+
+1. Patch `publish_to_wechat.py` 第 115 行，临时改为 `method="rule"`：
+   ```python
+   # publish_to_wechat.py 第 115 行
+   markdown_content = fetch_module.get_news_summary(days=days, method="rule")
+   ```
+2. 运行 `python3 scripts/publish_to_wechat.py --create-draft`
+3. **运行完毕后立即 revert patch**，恢复默认 `method="ai"`
+
+> **推荐长期修复**：将 `fetch_ai_news.py` 中 `httpx.Timeout(120.0, connect=15.0)` 改为 `httpx.Timeout(60.0, connect=10.0)`，或直接在 `.env` 中切换到 hongmacc API（`gpt-5.4-mini`）。
 
 ### ⚠️ `.env` 文件位置
 
