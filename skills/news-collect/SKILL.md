@@ -726,7 +726,7 @@ notebooklm source delete "<full-uuid-from-error>"
 
 ## 每日维护 Cron
 
-每日 21:00 自动执行 4 项维护（Wiki同步、Git提交、IMA清理、NotebookLM补传）。详见 [references/daily-maintenance-cron.md](references/daily-maintenance-cron.md)。
+每天 21:00 自动执行 3 项维护（Wiki同步、Git提交、IMA清理）。NotebookLM补传已移除（2026-07-18）。详见 [references/daily-maintenance-cron.md](references/daily-maintenance-cron.md)。
 
 ## 文件结构
 
