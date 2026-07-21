@@ -22,14 +22,32 @@ description: 监控指定 X 用户的新推文 + AI 领域每日热点话题，�
 - ⚠️ opencli 需要 Chrome Browser Bridge 扩展连接，未连接时所有命令返回 `BROWSER_CONNECT` 错误（exit code 69）
 ## 执行方式
 
+### 步骤1：抓取推文数据
+
 ```bash
 python3 scripts/fetch_new_tweets.py
+python3 scripts/fetch_ai_trending.py
 ```
 
-- 无新推文时输出 `NO_NEW_TWEETS` 并退出码 1
-- 有新推文时输出 JSON 到 stdout，同时写入 `/tmp/x-monitor-new-tweets.json`
-- 这个脚本只负责抓取/比对/落盘，不直接发送飞书消息；飞书发送必须由外层工作流单独完成
-- 一次完整运行可能需要几分钟，属于正常现象（16 个用户，`twitter user-posts` 不稳定，每次能成功抓取的数量有波动）
+- 两个脚本独立运行，互不影响
+- fetch_new_tweets.py 无新推文时输出 `NO_NEW_TWEETS` 并退出码 1
+- 有数据时输出 JSON 到 stdout，同时写入 `/tmp/x-monitor-new-tweets.json`
+- fetch_ai_trending.py 始终输出 JSON（可能为空数组），写入 `/tmp/x-monitor-ai-trending.json`
+
+### 步骤2：生成中文总结并格式化输出
+
+```bash
+# 用户动态
+python3 scripts/summarize_tweets.py /tmp/x-monitor-new-tweets.json --type user --batch
+
+# AI 热点
+python3 scripts/summarize_tweets.py /tmp/x-monitor-ai-trending.json --type trending --batch
+```
+
+- 脚本自动调用 LLM（降级链：技能 .env → config.yaml custom_providers → 规则摘要）对每条推文生成中文总结
+- 优先使用批量模式（多条推文合并为一个 API 调用），失败时自动降级为逐条调用
+- 输出格式化的飞书消息（中文总结 + 链接）
+- 同时保存带摘要的 JSON（`-summarized.json` 后缀）
 
 ## 数据格式
 
@@ -51,34 +69,31 @@ JSON 数组，每条推文包含：
 
 无论有无新推文，都必须输出内容（不要用 `[SILENT]`）。
 
+格式为**中文内容总结 + 链接**，不展示推文原文正文。
+
 ### 有新推文时
 
 ```
 🐦 X 动态监控 | 4月21日 07:00
 ━━━━━━━━━━━━━━━━━━
-共 5 条新推文
 
-@dotey
-推文正文内容...
+@dotey（宝玉）
+中文内容总结（1-2句话，概括核心内容）
 🔗 <https://x.com/dotey/status/xxx>
-👍 1.2k | 🔄 234 | 💬 56 | 👁 15k
 
-@op7418
-推文正文内容...
+@op7418（op7418）
+中文内容总结（1-2句话，概括核心内容）
 🔗 <https://x.com/op7418/status/xxx>
-👍 890 | 🔄 123 | 💬 34 | 👁 8.9k
 
 ━━━━━━━━━━━━━━━━━━
 
 🔥 AI 热点话题
 ━━━━━━━━━━━━━━━━━━
-1. @author1 — 推文摘要前50字...
+1. @author1（Author Name）— 中文内容总结
    🔗 <https://x.com/author1/status/xxx>
-   👍 5.2k | 🔄 1.2k | 💬 456 | 👁 120k
 
-2. @author2 — 推文摘要前50字...
+2. @author2（Author Name）— 中文内容总结
    🔗 <https://x.com/author2/status/xxx>
-   👍 3.1k | 🔄 890 | 💬 234 | 👁 89k
 
 ━━━━━━━━━━━━━━━━━━
 ```
@@ -89,11 +104,7 @@ JSON 数组，每条推文包含：
 🐦 X 动态监控 | 4月21日 07:00
 暂无新推文
 
-🔥 AI 热点话题
-━━━━━━━━━━━━━━━━━━
-（如有热点推文则展示，如无则显示）
-暂无 AI 热点
-━━━━━━━━━━━━━━━━━━
+🔥 暂无 AI 热点
 ```
 
 **热点话题获取失败时**：在热点区域显示「🔥 AI 热点话题获取失败，下次重试」，不影响用户动态部分。
@@ -101,9 +112,9 @@ JSON 数组，每条推文包含：
 ⚠️ URL 必须用尖括号包裹：<https://x.com/user/status/id>，避免飞书截断超链接可点击区域。
 
 规则：
-- 每条推文必须包含完整正文，不要省略
-- 数字格式化：≥1M 显示为 X.XM，≥1k 显示为 X.Xk
-- 转发推文标注「🔄 转发自 @原作者」
+- 每条推文只输出中文总结 + 链接，**不要输出原文正文**
+- 中文总结 1-2 句话，概括核心内容
+- 转发推文标注「🔄 转发自 @原作者」后接总结
 - **无新推文时也要汇报**，不要使用 [SILENT]
 
 ## 状态管理
@@ -174,8 +185,10 @@ deliver: origin
 任务名：`x-users-monitor`
 - 调度：每天 7:00, 11:00, 18:00
 - Agent 执行步骤：
-  1. 运行 `python3 scripts/fetch_new_tweets.py` 获取用户新推文
-  2. 运行 `python3 scripts/fetch_ai_trending.py` 获取 AI 热点话题
-  3. 格式化输出（两个模块独立运行，互不影响）
-  4. 有新推文时展示用户动态，有热点时展示 AI 热点话题
-  5. 始终推送（即使无新内容也要汇报）
+  1. cd /Users/felix/.hermes/skills/felix-skills/skills/x-monitor
+  2. 运行 `python3 scripts/fetch_new_tweets.py` 获取用户新推文
+  3. 运行 `python3 scripts/fetch_ai_trending.py` 获取 AI 热点话题（独立运行，失败不影响动态部分）
+  4. 如有新推文，运行 `python3 scripts/summarize_tweets.py /tmp/x-monitor-new-tweets.json --type user --batch` 生成中文总结
+  5. 运行 `python3 scripts/summarize_tweets.py /tmp/x-monitor-ai-trending.json --type trending --batch` 生成热点总结
+  6. 将两部分输出拼接后直接输出（系统会自动投递）
+  7. 始终推送（即使无新内容也要汇报）
