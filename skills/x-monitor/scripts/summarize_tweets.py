@@ -64,7 +64,7 @@ def call_llm(config, prompt, timeout=30):
             json={
                 "model": config["model"],
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 2048,
+                "max_tokens": 8192,
                 "temperature": 0.3,
             },
             timeout=timeout,
@@ -103,7 +103,7 @@ def summarize_batch(texts, max_chars=2000):
 
     for config in configs:
         print(f"  使用 {config['name']} 批量总结 {len(texts)} 条推文...", file=sys.stderr)
-        result = call_llm(config, prompt, timeout=60)
+        result = call_llm(config, prompt, timeout=120)
         if result:
             # 尝试解析 JSON
             try:
@@ -130,8 +130,8 @@ def summarize_batch(texts, max_chars=2000):
     return None
 
 
-def summarize_single(author, text, max_chars=2000):
-    """单条推文总结"""
+def summarize_single(author, text, max_chars=2000, timeout=15):
+    """单条推文总结，短超时快速降级"""
     configs = load_llm_config()
     truncated = text[:max_chars]
     prompt = f"""请用一句话中文总结以下推文的核心内容（20-50字），直接输出总结：
@@ -141,10 +141,13 @@ def summarize_single(author, text, max_chars=2000):
 总结："""
 
     for config in configs:
-        print(f"  使用 {config['name']} 总结 @{author}", file=sys.stderr)
-        result = call_llm(config, prompt, timeout=30)
-        if result:
-            return result
+        try:
+            print(f"  使用 {config['name']} 总结 @{author}", file=sys.stderr)
+            result = call_llm(config, prompt, timeout=timeout)
+            if result:
+                return result
+        except Exception:
+            continue
 
     # 降级：规则摘要
     return rule_summary(text)
@@ -172,6 +175,11 @@ def format_user_tweets(tweets):
     if not tweets:
         return None
 
+    # 限制最多展示条数，防止 cron 输出超长
+    MAX_TWEETS = 10
+    truncated_count = max(0, len(tweets) - MAX_TWEETS)
+    tweets = tweets[:MAX_TWEETS]
+
     lines = [f"🐦 X 动态监控 | {DATE_STR} {TIME_STR}", "━━━━━━━━━━━━━━━━━━", ""]
 
     for t in tweets:
@@ -179,6 +187,9 @@ def format_user_tweets(tweets):
         author_name = t.get("author_name", "")
         display = f"@{author}（{author_name}）" if author_name else f"@{author}"
         summary = t.get("summary", rule_summary(t.get("text", "")))
+        # 截断过长的摘要
+        if len(summary) > 100:
+            summary = summary[:100].rstrip() + "…"
         url = t.get("url", "")
         is_retweet = t.get("is_retweet", False)
 
@@ -194,6 +205,10 @@ def format_user_tweets(tweets):
         lines.append(f"🔗 <{url}>")
         lines.append("")
 
+    if truncated_count > 0:
+        lines.append(f"…另有 {truncated_count} 条未展示")
+        lines.append("")
+
     lines.append("━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)
 
@@ -203,6 +218,11 @@ def format_trending_tweets(tweets):
     if not tweets:
         return "🔥 暂无 AI 热点"
 
+    # 限制最多展示条数，防止 cron 输出超长
+    MAX_TWEETS = 8
+    truncated_count = max(0, len(tweets) - MAX_TWEETS)
+    tweets = tweets[:MAX_TWEETS]
+
     lines = ["🔥 AI 热点话题", "━━━━━━━━━━━━━━━━━━"]
 
     for i, t in enumerate(tweets, 1):
@@ -210,10 +230,16 @@ def format_trending_tweets(tweets):
         author_name = t.get("author_name", "")
         display = f"@{author}（{author_name}）" if author_name else f"@{author}"
         summary = t.get("summary", rule_summary(t.get("text", "")))
+        # 截断过长的摘要
+        if len(summary) > 100:
+            summary = summary[:100].rstrip() + "…"
         url = t.get("url", "")
 
         lines.append(f"{i}. {display} — {summary}")
         lines.append(f"   🔗 <{url}>")
+
+    if truncated_count > 0:
+        lines.append(f"   …另有 {truncated_count} 条未展示")
 
     lines.append("━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)
@@ -243,17 +269,17 @@ def main():
 
     # 生成总结
     if args.batch and len(tweets) > 1:
-        # 批量模式
+        # 批量模式：尝试 LLM，失败直接用规则摘要
         texts = [(t.get("author", ""), t.get("text", "")) for t in tweets]
         summaries = summarize_batch(texts)
         if summaries:
             for t, s in zip(tweets, summaries):
                 t["summary"] = s
         else:
-            # 批量失败，逐条降级
-            print("  批量总结失败，逐条处理...", file=sys.stderr)
+            # LLM 不可用，直接用规则摘要（不逐条调 LLM 避免超时）
+            print("  LLM 总结不可用，使用规则摘要", file=sys.stderr)
             for t in tweets:
-                t["summary"] = summarize_single(t.get("author", ""), t.get("text", ""))
+                t["summary"] = rule_summary(t.get("text", ""))
     else:
         for t in tweets:
             t["summary"] = summarize_single(t.get("author", ""), t.get("text", ""))
