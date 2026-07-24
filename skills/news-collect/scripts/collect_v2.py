@@ -21,7 +21,7 @@ from bs4 import BeautifulSoup
 FEISHU_BASE_TOKEN = "Tn1vbRQyraNFvAstbqicUlIJnue"
 FEISHU_TABLE_ID = "tblXp6DHjQPomXbv"
 # +record-batch-create --json 的 fields 使用字段名
-FEISHU_FIELDS = ["title", "link", "description", "source", "updatetime"]
+FEISHU_FIELDS = ["title", "link", "description", "source", "category", "updatetime"]
 NOTEBOOKLM_CMD = "notebooklm"
 NOTEBOOK_NAME = "AI 资讯 V3"
 NOTEBOOK_ID = "b08626a7-cda5-4dd2-b0e7-536eafb48274"
@@ -816,7 +816,127 @@ def upload_to_notebooklm(file_path, title, max_retries=3, retry_delay=3):
 
 # ============ 飞书多维表格推送 ============
 
-def push_to_feishu(url, title, summary, author="", webhook_url=None):
+# ============ 文章分类 ============
+
+def classify_article(title, summary=""):
+    """使用加权关键词规则对文章进行分类（9分类 + 其他）"""
+    text = f"{title} {summary}".lower()
+
+    # 非AI内容 → 直接返回"其他"
+    non_ai_kw = ["招聘", "诚聘", "招贤", "加入我们", "简历", "直播预告", "预告", "倒计时"]
+    if any(kw in title for kw in non_ai_kw):
+        return "其他"
+
+    # 加权规则：(分类, [(关键词, 权重)])
+    rules = [
+        ("AI 算力", [
+            ("芯片", 10), ("GPU", 10), ("TPU", 10), ("NPU", 10),
+            ("数据中心", 9), ("算力", 9), ("服务器", 8), ("集成电路", 9), ("半导体", 9),
+            ("训练成本", 8), ("推理成本", 8), ("算力租赁", 9),
+            ("昇腾", 10), ("英伟达", 8), ("NVIDIA", 8),
+            ("H100", 9), ("H200", 9), ("B200", 9),
+            ("推理芯片", 9), ("专用芯片", 8), ("智算中心", 9), ("液冷", 7),
+        ]),
+        ("模型技术", [
+            ("CVPR", 10), ("ICLR", 10), ("NeurIPS", 10), ("AAAI", 10), ("ICML", 10),
+            ("SOTA", 9), ("Benchmark", 9), ("技术报告", 9), ("综述", 9),
+            ("微调", 7), ("蒸馏", 7), ("量化", 7), ("推理优化", 7), ("多模态", 7),
+            ("Transformer", 7), ("模型架构", 7), ("数据集", 8),
+            ("模型发布", 8), ("最强模型", 7), ("新模型", 7),
+            ("开源模型", 8), ("评测", 8), ("MoE", 8), ("长上下文", 7),
+            ("RLHF", 8), ("GRPO", 8), ("DPO", 8), ("世界模型", 8),
+            ("技术路线", 7), ("持续学习", 7),
+        ]),
+        ("Agent基础设施", [
+            ("MCP", 10), ("Hook", 9), ("沙箱", 8), ("多智能体", 9), ("协议", 7),
+            ("AIP", 9), ("Tool Use", 9), ("Function Calling", 9),
+            ("Agent框架", 9), ("驾驭层", 10), ("护栏", 9),
+            ("Agent三件套", 10), ("安全治理", 8), ("智能体安全", 8), ("技能市场", 8),
+            ("记忆", 7), ("工作流", 7),
+        ]),
+        ("AI软件工程", [
+            ("Claude Code", 10), ("GitHub Copilot", 10), ("Cursor", 10),
+            ("Vibe Coding", 10), ("Vibe Design", 10), ("Codex", 10),
+            ("代码生成", 9), ("IDE", 9), ("编程", 8),
+            ("代码审查", 8), ("Code Review", 8),
+            ("DevOps", 8), ("CI/CD", 8), ("工程化", 8), ("研发效能", 8),
+            ("一人公司", 8), ("AI员工", 9), ("软件工程", 8), ("测试", 7), ("运维", 7),
+        ]),
+        ("内容创作", [
+            ("Seedance", 10), ("Sora", 9), ("Midjourney", 9), ("Stable Diffusion", 9),
+            ("Vidu", 9), ("LibTV", 10),
+            ("短剧", 9), ("漫剧", 9), ("游戏创作", 8), ("营销内容", 7),
+            ("设计工具", 8), ("AI配音", 9), ("AI音乐", 9), ("3D模型", 8),
+            ("视频生成", 8), ("AI视频", 8), ("AI绘画", 8), ("AI写作", 8),
+            ("图像生成", 8), ("内容创作", 8), ("内容生产", 8),
+        ]),
+        ("个人生产力", [
+            ("知识库", 9), ("办公", 7), ("学习", 6), ("搜索", 7),
+            ("信息处理", 7), ("PPT", 9), ("个人自动化", 8), ("消费级", 7),
+            ("效率工具", 8), ("Notion AI", 10), ("办公自动化", 8), ("自动剪辑", 8),
+            ("ChatCut", 10), ("WPS", 8), ("灵犀", 8), ("WorkBuddy", 10),
+        ]),
+        ("行业应用", [
+            ("医疗AI", 9), ("金融AI", 9), ("教育AI", 9), ("政务AI", 9),
+            ("科学智能", 9), ("AI for Science", 10),
+            ("制造", 7), ("零售", 7), ("文化传媒", 7), ("法律AI", 8),
+            ("农业", 7), ("制药", 8), ("药物发现", 9), ("精准医疗", 8),
+            ("智慧城市", 8), ("智慧教育", 8),
+        ]),
+        ("智能终端", [
+            ("AI手机", 10), ("AI眼镜", 10), ("智能眼镜", 10), ("AI耳机", 10),
+            ("可穿戴", 8), ("智能汽车", 9), ("自动驾驶", 9), ("智能家居", 8),
+            ("Apple Intelligence", 10), ("AI PC", 9),
+            ("AI Pin", 9), ("Rabbit", 9),
+            ("端侧", 8), ("具身智能", 8), ("人形机器人", 9), ("智能终端", 9),
+            ("机器人", 7),
+        ]),
+        ("行业相关", [
+            ("收购", 8), ("并购", 8), ("亿美元", 8), ("亿人民币", 8), ("轮融资", 8), ("估值", 7),
+            ("IPO", 8), ("上市", 7), ("裁员", 8), ("跳槽", 8), ("入职", 7), ("离职", 7),
+            ("速递", 9), ("早知道", 9), ("快讯", 9),
+            ("创业者", 7), ("独角兽", 7), ("财报", 8),
+            ("政策", 7), ("法规", 7),
+            ("观点", 7), ("趋势", 7), ("深度分析", 8), ("深度解析", 7),
+            ("访谈", 7), ("战略", 7), ("竞争", 7),
+            ("暗线", 9), ("再思考", 9), ("思考", 7),
+            ("预测", 7), ("变革", 7), ("重塑", 7),
+            ("我低估了", 8), ("我看到了", 7), ("的真相", 7),
+        ]),
+    ]
+
+    best_cat = None
+    best_weight = 0
+    for cat, keywords in rules:
+        for kw, weight in keywords:
+            if kw in text:
+                if weight > best_weight:
+                    best_weight = weight
+                    best_cat = cat
+
+    if best_cat:
+        return best_cat
+
+    # 兜底启发式
+    fallback_rules = [
+        (["芯片", "GPU", "算力", "服务器", "数据中心"], "AI 算力"),
+        (["模型", "算法", "大模型", "评测", "论文", "Benchmark"], "模型技术"),
+        (["Agent", "智能体", "MCP", "安全治理", "技能"], "Agent基础设施"),
+        (["编码", "编程", "代码", "开源", "开发框架", "软件工程", "IDE"], "AI软件工程"),
+        (["视频", "图像", "绘画", "写作", "创作", "生成", "短剧", "漫剧"], "内容创作"),
+        (["知识库", "办公", "笔记", "PPT", "效率"], "个人生产力"),
+        (["教育", "医疗", "金融", "政务", "制造", "科学", "法律"], "行业应用"),
+        (["手机", "眼镜", "耳机", "终端", "机器人", "汽车", "可穿戴"], "智能终端"),
+        (["融资", "投资", "收购", "上市", "观点", "趋势", "思考", "深度", "访谈"], "行业相关"),
+    ]
+    for kws, cat in fallback_rules:
+        if any(k in text for k in kws):
+            return cat
+
+    return "其他"
+
+
+def push_to_feishu(url, title, summary, author="", webhook_url=None, category="其他"):
     """推送文章到飞书多维表格（通过 lark-cli）"""
     import subprocess
     
@@ -824,7 +944,7 @@ def push_to_feishu(url, title, summary, author="", webhook_url=None):
     
     record_data = {
         "fields": FEISHU_FIELDS,
-        "rows": [[title, url, summary, author, now]]
+        "rows": [[title, url, summary, author, category, now]]
     }
     
     try:
@@ -1019,11 +1139,14 @@ def main():
     if not args.no_push:
         print("\n[5/5] 推送到飞书多维表格...")
         source_name = data.get('source_name', '')
+        category = classify_article(data['title'], summary)
+        print(f"   🏷️  分类: {category}")
         success, response = push_to_feishu(
             args.url,
             data['title'],
             summary,
-            source_name
+            source_name,
+            category=category
         )
         
         if success:
@@ -1049,6 +1172,7 @@ def main():
         "title": data['title'],
         "author": data.get('author', ''),
         "summary": summary,
+        "category": classify_article(data['title'], summary),
         "raw_markdown_path": str(raw_path),
         "notebooklm": args.notebook
     }
