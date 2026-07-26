@@ -152,7 +152,7 @@ def classify_news_with_ai(news_list):
         client = OpenAI(
             api_key=OPENAI_API_KEY,
             base_url=OPENAI_BASE_URL,
-            timeout=httpx.Timeout(120.0, connect=15.0),
+            timeout=httpx.Timeout(300.0, connect=15.0),
         )
         
         response = client.chat.completions.create(
@@ -220,6 +220,7 @@ def classify_by_keywords(news_list):
         "个人生产力": [],
         "行业应用": [],
         "智能终端": [],
+        "其他AI相关": [],
         "其他": [],
     }
 

@@ -198,7 +198,7 @@ cd ~/.hermes/skills/felix-skills/skills/ai-news-fetcher && python3 scripts/publi
 | **挂起超时** | API 无响应，OpenAI client 在 **120 秒**后超时，脚本自动降级为关键词分类 | ⚠️ 120s 很长，加上后续步骤可能超过 cron 的 300s 总超时 |
 | **摘要质量差** | GLM 返回分析过程（如 "1. Analyze the Request..."）而非正式摘要 | 摘要不可用，需降级为规则引擎 |
 
-**代码实际超时设置**（`fetch_ai_news.py` 第 131 行）：`httpx.Timeout(120.0, connect=15.0)`，**不是** SKILL.md 之前误写的 60s。
+**代码实际超时设置**（`fetch_ai_news.py` 第 155 行）：`httpx.Timeout(300.0, connect=15.0)`。
 
 **默认使用 `method="ai"`（大模型分类），失败自动降级为关键词分类。**
 - `method="ai"` 使用 OpenAI 兼容 API 进行智能分类，超时或失败时自动降级
@@ -216,7 +216,7 @@ cd ~/.hermes/skills/felix-skills/skills/ai-news-fetcher && python3 scripts/publi
 2. 运行 `python3 scripts/publish_to_wechat.py --create-draft`
 3. **运行完毕后立即 revert patch**，恢复默认 `method="ai"`
 
-> **推荐长期修复**：将 `fetch_ai_news.py` 中 `httpx.Timeout(120.0, connect=15.0)` 改为 `httpx.Timeout(60.0, connect=10.0)`，或直接在 `.env` 中切换到 hongmacc API（`gpt-5.4-mini`）。
+> **推荐长期修复**：将 `fetch_ai_news.py` 中 `httpx.Timeout(300.0, connect=15.0)` 改为 `httpx.Timeout(60.0, connect=10.0)`，或直接在 `.env` 中切换到 hongmacc API（`gpt-5.4-mini`）。
 
 ### ⚠️ `.env` 文件位置
 
