@@ -14,7 +14,7 @@ description: 获取 AI 领域最新资讯并进行智能分类。从微信公众
 - **分类类别**：
   - AI 算力（芯片、GPU、数据中心、训练与推理成本等）
   - 模型技术（新模型、多模态、训练方法、开源模型、评测等）
-  - Agent基础设施（MCP、技能、Hook、记忆、多智能体、安全等）
+  - Agent基建（MCP、技能、Hook、记忆、多智能体、安全等）
   - AI软件工程（Coding Agent、IDE、代码生成、DevOps等）
   - 内容创作（AI视频、AI绘画、AI音乐、短剧、漫剧等）
   - 个人生产力（知识库、办公、PPT、搜索、效率工具等）
@@ -290,7 +290,7 @@ os.environ['AI_NEWS_API_BASE'] = api_base.rstrip('/')
 1. [DeepSeek发布最新推理模型，多项基准登顶](https://...)
 2. [Mind Lab开源Macaron V1，采用Mixture-of-LoRA架构](https://...)
 
-### 🏗️ Agent基础设施（3 条）
+### 🏗️ Agent基建（3 条）
 
 1. [一文讲透Agent三件套：MCP、Skill、Hook如何给大模型装上护栏](https://...)
 2. [AIP协议更新：多智能体协作标准化迈向新阶段](https://...)

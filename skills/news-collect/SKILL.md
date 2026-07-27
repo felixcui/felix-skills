@@ -265,7 +265,7 @@ FEISHU_FIELDS = ["title", "link", "description", "source", "category", "updateti
 | link | 文章 URL |
 | description | 摘要（LLM 生成） |
 | `source` | 公众号文章填公众号名称；其他网站填域名；Twitter 填 `@screenName`；飞书文档填"飞书文档" |
-| `category` | 自动分类：AI算力/模型技术/Agent基础设施/AI软件工程/内容创作/个人生产力/行业应用/智能终端/行业相关/其他 |
+| `category` | 自动分类：AI算力/模型技术/Agent基建/AI软件工程/内容创作/个人生产力/行业应用/智能终端/行业相关/其他 |
 | updatetime | 当前时间 |
 
 ### IMA 知识库配置

@@ -47,7 +47,7 @@ RSS_API_BASE = os.getenv("AI_NEWS_API_BASE", "https://wexinrss.zeabur.app")
 CATEGORY_ICONS = {
     "AI 算力": "⚡",
     "模型技术": "🧠",
-    "Agent基础设施": "🏗️",
+    "Agent基建": "🏗️",
     "AI软件工程": "💻",
     "内容创作": "🎨",
     "个人生产力": "📊",
@@ -94,7 +94,7 @@ def classify_news_with_ai(news_list):
 - 包含：数据集、评测、Benchmark、开源模型、技术路线
 - 包含：GPT、Claude、Kimi、Qwen、Llama、DeepSeek等模型
 
-**Agent基础设施** - Agent系统的底层框架与协议
+**Agent基建** - Agent系统的底层框架与协议
 - 包含：MCP、技能(Skill)、Hook、记忆、沙箱、安全机制
 - 包含：多智能体协作、工作流编排、Agent框架、协议标准
 - 包含：AIP协议、Tool Use、Function Calling底层设计
@@ -134,7 +134,7 @@ def classify_news_with_ai(news_list):
 {{
   "AI 算力": [索引列表],
   "模型技术": [索引列表],
-  "Agent基础设施": [索引列表],
+  "Agent基建": [索引列表],
   "AI软件工程": [索引列表],
   "内容创作": [索引列表],
   "个人生产力": [索引列表],
@@ -214,7 +214,7 @@ def classify_by_keywords(news_list):
     categories = {
         "AI 算力": [],
         "模型技术": [],
-        "Agent基础设施": [],
+        "Agent基建": [],
         "AI软件工程": [],
         "内容创作": [],
         "个人生产力": [],
@@ -260,8 +260,8 @@ def classify_by_keywords(news_list):
             ("RLHF", 8), ("GRPO", 8), ("DPO", 8), ("世界模型", 8),
             ("技术路线", 7), ("持续学习", 7),
         ]),
-        # === Agent基础设施 ===
-        ("Agent基础设施", [
+        # === Agent基建 ===
+        ("Agent基建", [
             ("MCP", 10), ("技能", 8), ("Hook", 9), ("记忆", 7), ("沙箱", 8),
             ("多智能体", 9), ("工作流", 7), ("协议", 7),
             ("AIP", 9), ("Tool Use", 9), ("Function Calling", 9),
@@ -367,7 +367,7 @@ def classify_by_keywords(news_list):
             elif any(x in title for x in ["模型", "算法", "大模型", "AI", "评测", "论文"]):
                 categories["模型技术"].append(i)
             elif any(x in title for x in ["Agent", "智能体", "MCP", "记忆", "安全治理"]):
-                categories["Agent基础设施"].append(i)
+                categories["Agent基建"].append(i)
             elif any(x in title for x in ["融资", "投资", "收购", "上市"]):
                 categories["其他AI相关"].append(i)
             elif any(x in title for x in ["手机", "眼镜", "耳机", "终端", "机器人", "汽车"]):
@@ -436,7 +436,7 @@ def format_news_markdown(news_list, categories, start_date, end_date, platform="
     category_order = [
         "AI 算力",
         "模型技术",
-        "Agent基础设施",
+        "Agent基建",
         "AI软件工程",
         "内容创作",
         "个人生产力",
