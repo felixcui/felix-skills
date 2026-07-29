@@ -32,6 +32,8 @@ IMA_KB_ID = "AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ="
 IMA_CONFIG_PATH = Path.home() / ".config" / "ima"
 IMA_API_BASE = "https://ima.qq.com"
 
+# baoyu-fetch 路径（Chrome CDP，可绕过微信反爬）
+BAOYU_FETCH = "/Users/felix/.hermes/skills/baoyu-url-to-markdown/scripts/baoyu-fetch"
 
 # ============ 内容抓取 ============
 
@@ -171,8 +173,7 @@ def fetch_wechat_article(url):
         return {"error": f"抓取失败: {str(e)}"}
 
 
-# baoyu-fetch 路径（Chrome CDP，可绕过微信反爬）
-BAOYU_FETCH = "/Users/felix/.hermes/skills/baoyu-url-to-markdown/scripts/baoyu-fetch"
+
 
 
 def fetch_wechat_article_baoyu(url):
