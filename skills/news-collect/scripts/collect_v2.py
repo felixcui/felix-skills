@@ -171,8 +171,72 @@ def fetch_wechat_article(url):
         return {"error": f"抓取失败: {str(e)}"}
 
 
+# baoyu-fetch 路径（Chrome CDP，可绕过微信反爬）
+BAOYU_FETCH = "/Users/felix/.hermes/skills/baoyu-url-to-markdown/scripts/baoyu-fetch"
+
+
+def fetch_wechat_article_baoyu(url):
+    """抓取微信公众号文章 - 使用 baoyu-fetch (Chrome CDP) 绕过反爬
+    
+    baoyu-fetch 默认输出 YAML frontmatter + markdown body。
+    使用默认格式（非 --format json），因为在反爬场景下默认格式更可靠。
+    当 defuddle 抓取失败（未知标题/反爬拦截）时作为降级方案。
+    """
+    try:
+        result = subprocess.run(
+            [BAOYU_FETCH, url],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        
+        if result.returncode != 0:
+            return {"error": f"baoyu-fetch 调用失败: {result.stderr}"}
+        
+        output = result.stdout.strip()
+        
+        # 解析 YAML frontmatter（---开头到---结尾之间的键值对）
+        metadata = {}
+        body = output
+        if output.startswith('---'):
+            parts = output.split('---', 2)
+            if len(parts) >= 3:
+                yaml_str = parts[1].strip()
+                try:
+                    metadata = yaml.safe_load(yaml_str) or {}
+                except Exception:
+                    pass
+                body = parts[2].strip()
+        
+        title = metadata.get("title") or ""
+        author = metadata.get("author") or ""
+        source_name = metadata.get("siteName") or author
+        
+        # 检测是否被验证码拦截（标题为"微信公众平台"或内容过短）
+        if title == "微信公众平台" or len(body) < 100:
+            return {"error": "baoyu-fetch 被微信验证码拦截"}
+        
+        return {
+            "title": title or "未知标题",
+            "author": author or "未知作者",
+            "source_name": source_name,
+            "publish_time": "",
+            "content": body,
+            "url": url
+        }
+    except FileNotFoundError:
+        return {"error": f"baoyu-fetch 未安装: {BAOYU_FETCH}"}
+    except subprocess.TimeoutExpired:
+        return {"error": "baoyu-fetch 调用超时"}
+    except Exception as e:
+        return {"error": f"baoyu-fetch 抓取失败: {str(e)}"}
+
+
 def fetch_wechat_article_defuddle(url):
-    """抓取微信公众号文章 - 使用 defuddle 获取 Markdown 内容"""
+    """抓取微信公众号文章 - 使用 defuddle 获取 Markdown 内容
+    
+    降级链：defuddle → baoyu-fetch (Chrome CDP)
+    """
     try:
         result = subprocess.run(
             ['defuddle', 'parse', '-j', '--md', url],
@@ -182,33 +246,43 @@ def fetch_wechat_article_defuddle(url):
         )
         
         if result.returncode != 0:
-            return {"error": f"defuddle 调用失败: {result.stderr}"}
+            print("  ⚠️ defuddle 失败，降级到 baoyu-fetch...")
+            return fetch_wechat_article_baoyu(url)
             
         data = json.loads(result.stdout.strip())
+        
+        # 检测反爬：defuddle 返回未知标题或空内容
+        title = data.get("title") or ""
+        content = data.get("content") or ""
+        if title in ("未知标题", "") or len(content.strip()) < 100:
+            print("  ⚠️ defuddle 抓取内容异常（反爬拦截），降级到 baoyu-fetch...")
+            return fetch_wechat_article_baoyu(url)
         
         # 提取公众号名称（作为 source_name）
         source_name = data.get("site_name") or ""
         if not source_name:
-            # defuddle 可能返回 author，但那是文章作者而非公众号
-            # 通过 fetch_wechat_account_name 从页面 HTML 补充获取
             source_name = fetch_wechat_account_name(url)
         
         return {
-            "title": data.get("title") or "未知标题",
+            "title": title,
             "author": data.get("author") or "未知作者",
             "source_name": source_name,
             "publish_time": data.get("published") or "",
-            "content": data.get("content") or "无法提取正文",
+            "content": content,
             "url": url
         }
     except FileNotFoundError:
-        return {"error": "defuddle 未安装，请先安装 defuddle"}
+        print("  ⚠️ defuddle 未安装，降级到 baoyu-fetch...")
+        return fetch_wechat_article_baoyu(url)
     except subprocess.TimeoutExpired:
-        return {"error": "defuddle 调用超时"}
+        print("  ⚠️ defuddle 超时，降级到 baoyu-fetch...")
+        return fetch_wechat_article_baoyu(url)
     except json.JSONDecodeError:
-        return {"error": "defuddle 返回格式解析失败"}
+        print("  ⚠️ defuddle 返回异常，降级到 baoyu-fetch...")
+        return fetch_wechat_article_baoyu(url)
     except Exception as e:
-        return {"error": f"抓取失败: {str(e)}"}
+        print(f"  ⚠️ defuddle 异常({e})，降级到 baoyu-fetch...")
+        return fetch_wechat_article_baoyu(url)
 
 
 def fetch_wechat_account_name(url):
