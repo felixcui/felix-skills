@@ -11,6 +11,7 @@ description: 获取 AI 领域最新资讯并进行智能分类。从微信公众
 
 - **自动获取**：从配置的 RSS API 获取最新的 AI 资讯
 - **智能分类**：使用加权关键词规则自动将资讯分类到不同类别
+- **自动入库**：分类完成后自动批量推送到 devmaster.cn 数据库（`DEVELMASTER_API_KEY` 配置后生效）
 - **分类类别**：
   - AI 算力（芯片、GPU、数据中心、训练与推理成本等）
   - 模型技术（新模型、多模态、训练方法、开源模型、评测等）
@@ -67,11 +68,35 @@ WECHAT_APPSECRET=your_appsecret
 # baoyu-markdown-to-html skill 路径（发布到公众号时需要）
 BAOYU_MARKDOWN_TO_HTML_DIR=~/work/skills/baoyu-skills/skills/baoyu-markdown-to-html
 
+# devmaster.cn API 配置（AI 资讯入库）
+DEVELMASTER_API_KEY=your_api_key
+
 # OpenAI 兼容 API 配置（AI 智能分类时需要，不配置则使用关键词分类）
 OPENAI_API_KEY=your_api_key
 OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 OPENAI_MODEL=qwen-plus
 ```
+
+### 3. devmaster.cn 资讯入库
+
+分类完成后，脚本会自动将资讯批量推送到 `https://devmaster.cn/api/ai-news/ingest`。
+
+**配置**：在 `.env` 中设置 `DEVELMASTER_API_KEY`。未配置时自动跳过。
+
+**API 格式**：
+```json
+{
+  "publishedDate": "2026-07-29",
+  "items": [
+    {"title": "...", "url": "...", "source": "公众号名", "category": "模型技术"}
+  ]
+}
+```
+
+**注意事项**：
+- category 使用原始分类名（带空格，如 `AI 算力`、`模型技术`），不能去掉空格（`AI算力` 会被 API 拒绝返回 422）
+- "其他"分类不在推送范围（API 不接受该分类值）
+- 推送失败不影响资讯生成和公众号发布流程
 
 ### 3. 关联 Skill
 

@@ -39,9 +39,15 @@ EXCLUDED_BIZ_IDS = {
     "2390216734"
 }
 
+# devmaster.cn API 配置（AI 资讯入库）
+DEVELMASTER_API_URL = os.getenv("DEVELMASTER_API_URL", "https://devmaster.cn/api/ai-news/ingest")
+DEVELMASTER_API_KEY = os.getenv("DEVELMASTER_API_KEY", "")
+
 # RSS API 配置
 RSS_API_KEY = os.getenv("AI_NEWS_API_KEY", "5O5H1c1NsT")
 RSS_API_BASE = os.getenv("AI_NEWS_API_BASE", "https://wexinrss.zeabur.app")
+# 修复末尾斜杠导致 404 的问题
+RSS_API_BASE = RSS_API_BASE.rstrip('/')
 
 # 分类图标映射（10分类新版）
 CATEGORY_ICONS = {
@@ -383,6 +389,79 @@ def classify_by_keywords(news_list):
     return categories
 
 
+def push_to_develmaster(news_list, categories):
+    """将分类后的资讯批量推送到 devmaster.cn API
+    
+    Args:
+        news_list: 资讯列表 [{"title", "link", "biz_name"}, ...]
+        categories: 分类结果 {"分类名": [索引列表], ...}
+    
+    Returns:
+        bool: 是否推送成功
+    """
+    if not DEVELMASTER_API_KEY:
+        print("⚠️ DEVELMASTER_API_KEY 未配置，跳过推送")
+        return False
+    
+    if not news_list:
+        print("⚠️ 无资讯可推送")
+        return False
+    
+    today = datetime.now().strftime("%Y-%m-%d")
+    items = []
+    seen_indices = set()
+    
+    # 按分类顺序遍历，跳过"其他"分类
+    category_order = [
+        "AI 算力", "模型技术", "Agent基建", "AI软件工程",
+        "内容创作", "个人生产力", "行业应用", "智能终端", "其他AI相关",
+    ]
+    
+    for category in category_order:
+        if category not in categories:
+            continue
+        api_category = category  # 直接使用原始分类名（API 接受带空格的格式）
+        for idx in categories[category]:
+            if idx in seen_indices:
+                continue
+            seen_indices.add(idx)
+            news = news_list[idx]
+            items.append({
+                "title": news["title"],
+                "url": news["link"],
+                "source": news.get("biz_name", ""),
+                "category": api_category,
+            })
+    
+    if not items:
+        print("⚠️ 无有效资讯可推送")
+        return False
+    
+    payload = {
+        "publishedDate": today,
+        "items": items,
+    }
+    
+    try:
+        print(f"📤 推送 {len(items)} 条资讯到 devmaster.cn...")
+        resp = requests.post(
+            DEVELMASTER_API_URL,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {DEVELMASTER_API_KEY}",
+            },
+            json=payload,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        print(f"✅ devmaster.cn 推送成功: {json.dumps(result, ensure_ascii=False)[:200]}")
+        return True
+    except Exception as e:
+        print(f"❌ devmaster.cn 推送失败: {str(e)}")
+        return False
+
+
 def get_raw_news(days: int = 1) -> list:
     """获取原始资讯列表"""
     today = datetime.now()
@@ -531,6 +610,9 @@ def get_news_summary(days: int = 1, classify: bool = True, platform: str = "feis
             categories = {"AI相关": list(range(len(news_list)))}
 
         result, filtered = format_news_markdown(news_list, categories, yesterday, today, platform)
+        
+        # 推送到 devmaster.cn 数据库
+        push_to_develmaster(news_list, categories)
         
         # 输出过滤的资讯到 stderr，方便 cron agent 通知用户
         if filtered:
