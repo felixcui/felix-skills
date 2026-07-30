@@ -928,6 +928,7 @@ def classify_article(title, summary=""):
             ("Agent框架", 9), ("驾驭层", 10), ("护栏", 9),
             ("Agent三件套", 10), ("安全治理", 8), ("智能体安全", 8), ("技能市场", 8),
             ("记忆", 7), ("工作流", 7),
+            ("Sif", 9), ("电商Agent", 8), ("业务监控", 8), ("Skill", 8),
         ]),
         ("AI软件工程", [
             ("Claude Code", 10), ("GitHub Copilot", 10), ("Cursor", 10),
@@ -936,6 +937,8 @@ def classify_article(title, summary=""):
             ("代码审查", 8), ("Code Review", 8),
             ("DevOps", 8), ("CI/CD", 8), ("工程化", 8), ("研发效能", 8),
             ("一人公司", 8), ("AI员工", 9), ("软件工程", 8), ("测试", 7), ("运维", 7),
+            ("AI Native", 9), ("研发范式", 8), ("核心系统", 7),
+            ("AI基础设施", 9), ("研发全链路", 9), ("结果即服务", 8),
         ]),
         ("内容创作", [
             ("Seedance", 10), ("Sora", 9), ("Midjourney", 9), ("Stable Diffusion", 9),
