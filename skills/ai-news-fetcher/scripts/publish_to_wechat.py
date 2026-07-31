@@ -95,12 +95,13 @@ class WeChatNewsPublisher:
         print(f"✅ 微信公众号凭证已加载")
         print(f"   AppID: {self.appid[:8]}...")
     
-    def get_ai_news_markdown(self, days: int = 1) -> str:
+    def get_ai_news_markdown(self, days: int = 1, push_db: bool = True) -> str:
         """
         直接使用 fetch_ai_news.py 中的 get_news_summary 获取 Markdown
         
         Args:
             days: 获取最近几天的资讯
+            push_db: 是否推送到 devmaster.cn 数据库
         
         Returns:
             Markdown 内容
@@ -112,7 +113,7 @@ class WeChatNewsPublisher:
             
             # 直接调用 get_news_summary 函数
             if hasattr(fetch_module, 'get_news_summary'):
-                markdown_content = fetch_module.get_news_summary(days=days)
+                markdown_content = fetch_module.get_news_summary(days=days, push_db=push_db)
                 print(f"✅ 成功获取 Markdown")
                 print(f"   Markdown 长度: {len(markdown_content)} 字节")
                 return markdown_content
@@ -397,14 +398,14 @@ class WeChatNewsPublisher:
             print(f"❌ 飞书推送网络错误: {e}")
             return False
     
-    def create_and_publish(self, days: int = 1, cover_image: str = None, thumb_media_id: str = None, create_only: bool = False) -> str:
+    def create_and_publish(self, days: int = 1, cover_image: str = None, thumb_media_id: str = None, create_only: bool = False, push_db: bool = True) -> str:
         """创建并发布资讯"""
         print("=" * 50)
         print(f"📰 开始处理 AI 资讯（最近 {days} 天）")
         print("=" * 50)
         
         # 获取 Markdown
-        markdown_content = self.get_ai_news_markdown(days=days)
+        markdown_content = self.get_ai_news_markdown(days=days, push_db=push_db)
         
         # 保存 Markdown 文件到输出目录
         self._save_markdown(markdown_content)
@@ -448,6 +449,8 @@ def main():
                         help='封面图片路径（本地文件）')
     parser.add_argument('--thumb-media-id', type=str,
                         help='封面图片的 media_id（使用后台已有的图片，如不指定则使用默认素材ID）')
+    parser.add_argument('--no-db', action='store_true',
+                        help='跳过推送到 devmaster.cn 数据库')
     
     args = parser.parse_args()
     
@@ -465,13 +468,14 @@ def main():
         # 使用默认封面图素材ID（如果未指定）
         thumb_media_id = args.thumb_media_id if args.thumb_media_id else DEFAULT_THUMB_MEDIA_ID
         
+        push_db = not args.no_db
         print(f"✅ 使用封面图素材ID: {thumb_media_id}")
         
         try:
             if args.create_draft:
-                publisher.create_and_publish(days=args.days, cover_image=cover_image, thumb_media_id=thumb_media_id, create_only=True)
+                publisher.create_and_publish(days=args.days, cover_image=cover_image, thumb_media_id=thumb_media_id, create_only=True, push_db=push_db)
             elif args.publish:
-                publisher.create_and_publish(days=args.days, cover_image=cover_image, thumb_media_id=thumb_media_id, create_only=False)
+                publisher.create_and_publish(days=args.days, cover_image=cover_image, thumb_media_id=thumb_media_id, create_only=False, push_db=push_db)
         except Exception as e:
             print(f"❌ 发布失败: {e}")
             sys.exit(1)
@@ -481,7 +485,7 @@ def main():
         print(f"   使用默认封面图素材ID: {DEFAULT_THUMB_MEDIA_ID}")
         print("   使用 --publish 来创建并发布")
         try:
-            publisher.create_and_publish(days=args.days, thumb_media_id=DEFAULT_THUMB_MEDIA_ID, create_only=True)
+            publisher.create_and_publish(days=args.days, thumb_media_id=DEFAULT_THUMB_MEDIA_ID, create_only=True, push_db=True)
         except Exception as e:
             print(f"❌ 创建草稿失败: {e}")
             sys.exit(1)

@@ -560,7 +560,7 @@ def format_news_markdown(news_list, categories, start_date, end_date, platform="
     return "\n".join(lines), filtered
 
 
-def get_news_summary(days: int = 1, classify: bool = True, platform: str = "feishu", method: str = "ai") -> str:
+def get_news_summary(days: int = 1, classify: bool = True, platform: str = "feishu", method: str = "ai", push_db: bool = True) -> str:
     """获取并分类汇总 AI 资讯
     
     Args:
@@ -568,6 +568,7 @@ def get_news_summary(days: int = 1, classify: bool = True, platform: str = "feis
         classify: 是否进行分类
         platform: 输出平台类型
         method: 分类方法，'ai' (AI分类+规则兜底) 或 'rule' (仅规则分类)
+        push_db: 是否推送到 devmaster.cn 数据库（默认 True）
     """
     today = datetime.now()
     yesterday = today - timedelta(days=days)
@@ -616,7 +617,8 @@ def get_news_summary(days: int = 1, classify: bool = True, platform: str = "feis
         result, filtered = format_news_markdown(news_list, categories, yesterday, today, platform)
         
         # 推送到 devmaster.cn 数据库
-        push_to_develmaster(news_list, categories)
+        if push_db:
+            push_to_develmaster(news_list, categories)
         
         # 输出过滤的资讯到 stderr，方便 cron agent 通知用户
         if filtered:
