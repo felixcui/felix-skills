@@ -497,6 +497,109 @@ def _load_hermes_config():
                 return yaml.safe_load(f)
     return {}
 
+def _extract_summary_from_thinking(raw_text, max_length):
+    """尝试从 LLM 输出的分析/思考过程中提取有效摘要段落。
+    
+    GLM 等推理模型可能先输出分析过程再给结论，或整段都是分析但其中
+    蕴含可用信息。本函数尝试多种策略提取：
+    1. 寻找「摘要」「结论」「总结」「概括」标记后的段落
+    2. 过滤掉编号分析行后拼接剩余叙述性段落
+    3. 提取最后一段较长的叙述性文本作为兜底
+    """
+    if not raw_text or len(raw_text) < 30:
+        return None
+    
+    lines = raw_text.strip().split('\n')
+    
+    # 策略1：寻找明确的摘要/结论标记
+    markers = [r'(摘要|总结|结论|概括|一句话|简而言之|总而言之)[：:～~]']
+    for i, line in enumerate(lines):
+        line_stripped = line.strip()
+        for m in markers:
+            match = re.search(m, line_stripped)
+            if match:
+                # 提取标记后的内容
+                after_marker = line_stripped[match.end():].strip()
+                # 清理格式标记
+                after_marker = re.sub(r'\*{2,}', '', after_marker)
+                if len(after_marker) > 20:
+                    return after_marker
+                # 如果标记行本身内容少，取后续行
+                rest = '\n'.join(l.strip() for l in lines[i+1:] if l.strip() and len(l.strip()) > 10)
+                rest = re.sub(r'\*{2,}', '', rest)
+                if len(rest) > 20:
+                    return rest
+    
+    # 策略2：过滤掉编号分析行（如 "1. **分析文章主题**"），拼接剩余叙述段落
+    analysis_line_re = re.compile(
+        r'^\s*\d+[\.\、．]\s*\*{0,2}(分析|任务|长度|格式|内容|约束|要求|'
+        r'步骤|方法|要点|结构|背景|核心|关键|主要|特点|目标|思路|方向)'
+    )
+    narrative_lines = []
+    for line in lines:
+        line_stripped = line.strip()
+        if not line_stripped:
+            continue
+        if analysis_line_re.match(line_stripped):
+            continue
+        # 跳过纯编号行（如 "1." 或 "2、" 后面很短）
+        if re.match(r'^\s*\d+[\.\、．]\s*\*{0,2}.{0,15}\*{0,2}\s*$', line_stripped):
+            continue
+        # 跳过格式指令行（如 "格式要求"、"输出格式"）
+        if re.match(r'^\s*\*{0,2}(输出|格式|要求|限制|注意|确保|必须|不要)[：:]', line_stripped):
+            continue
+        cleaned = re.sub(r'\*{2,}', '', line_stripped)
+        if len(cleaned) > 10:
+            narrative_lines.append(cleaned)
+    
+    narrative_text = ' '.join(narrative_lines).strip()
+    if len(narrative_text) > 30:
+        if len(narrative_text) > max_length:
+            truncated = narrative_text[:max_length]
+            last_period = truncated.rfind('。')
+            if last_period > max_length * 0.6:
+                narrative_text = truncated[:last_period+1]
+            else:
+                narrative_text = truncated.rstrip() + '。'
+        if not narrative_text.endswith('。'):
+            narrative_text = narrative_text.rstrip('.') + '。'
+        return narrative_text
+    
+    # 策略3：提取最后一段较长的连续文本
+    paragraphs = [l.strip() for l in lines if len(l.strip()) > 30]
+    if paragraphs:
+        last_para = re.sub(r'\*{2,}', '', paragraphs[-1])
+        if len(last_para) > 30:
+            if not last_para.endswith('。'):
+                last_para = last_para.rstrip('.') + '。'
+            return last_para
+    
+    return None
+
+
+def _is_thinking_leak(text):
+    """检测 LLM 输出是否是分析/思考过程而非实际摘要。"""
+    if not text:
+        return False
+    stripped = text.strip()
+    
+    # 编号分析行开头（推理模型典型输出）
+    if re.match(r'^\s*\d+[\.\、．]\s*\*{0,2}(分析|任务|长度|格式|内容|约束|要求|步骤|方法|要点|结构|背景|核心|关键|主要|特点|目标|思路|方向)', stripped):
+        return True
+    
+    # 多行中超过 50% 是编号分析行
+    lines = [l.strip() for l in stripped.split('\n') if l.strip()]
+    if len(lines) >= 3:
+        analysis_count = sum(
+            1 for l in lines
+            if re.match(r'^\s*\d+[\.\、．]\s*\*{0,2}(分析|任务|长度|格式|内容|约束|要求|步骤|方法|要点|结构|背景|核心|关键|主要|特点)', l)
+        )
+        if analysis_count / len(lines) > 0.5:
+            return True
+    
+    return False
+
+
 def _call_llm_for_summary(api_key, base_url, model_name, prompt, max_length):
     """调用 LLM API 生成摘要的通用函数，返回摘要字符串或 None"""
     chat_url = base_url.rstrip("/")
@@ -524,8 +627,12 @@ def _call_llm_for_summary(api_key, base_url, model_name, prompt, max_length):
         summary = re.sub(r'\.{3}', '', summary)
         summary = re.sub(r'…', '', summary)
 
-        # 检测伪摘要：推理模型偶尔输出分析过程而非实际摘要
-        if re.match(r'^[\d]+\.\s*\*{0,2}(分析|任务|长度|格式|内容|约束|要求)', summary):
+        # 检测思考泄漏：尝试从分析过程中提取有效摘要
+        if _is_thinking_leak(summary):
+            extracted = _extract_summary_from_thinking(summary, max_length)
+            if extracted:
+                print(f"   ℹ️ LLM 输出包含分析过程，已自动提取摘要 ({len(extracted)}字)")
+                return extracted
             return None
 
         if len(summary) > 50:
@@ -549,11 +656,12 @@ def generate_summary_with_glm(content, title="", max_length=200):
 
     content = content.strip()[:2000]
 
-    prompt = f"""请直接输出以下文章的摘要，{max_length}字以内，一段话，以句号结尾。不要输出任何分析过程、思考步骤或约束条件复述。
+    prompt = f"""请用一段话概括以下文章的核心内容，{max_length}字以内，以句号结尾。
+直接输出摘要正文，禁止输出分析步骤、编号列表或任何元描述。
 
 标题：{title}
 
-内容：
+正文：
 {content}
 
 摘要："""
