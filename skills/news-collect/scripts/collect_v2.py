@@ -176,13 +176,50 @@ def fetch_wechat_article(url):
 
 
 
+def _parse_baoyu_output(output, url):
+    """解析 baoyu-fetch 的输出，返回标题/作者/正文或 None（验证码拦截）"""
+    output = output.strip()
+    metadata = {}
+    body = output
+    if output.startswith('---'):
+        parts = output.split('---', 2)
+        if len(parts) >= 3:
+            yaml_str = parts[1].strip()
+            try:
+                metadata = yaml.safe_load(yaml_str) or {}
+            except Exception:
+                pass
+            body = parts[2].strip()
+
+    title = metadata.get("title") or ""
+    author = metadata.get("author") or ""
+    source_name = metadata.get("siteName") or author
+
+    # 检测是否被验证码拦截（标题为"微信公众平台"或内容过短）
+    if title == "微信公众平台" or len(body) < 100:
+        return None
+
+    return {
+        "title": title or "未知标题",
+        "author": author or "未知作者",
+        "source_name": source_name,
+        "publish_time": "",
+        "content": body,
+        "url": url
+    }
+
+
 def fetch_wechat_article_baoyu(url):
     """抓取微信公众号文章 - 使用 baoyu-fetch (Chrome CDP) 绕过反爬
     
+    两步降级：
+    1. 先尝试默认 headless 模式（快速，无交互等待）
+    2. 如果被验证码拦截，改用 --wait-for interaction 模式（启动 Chrome GUI 等待验证通过）
+    
     baoyu-fetch 默认输出 YAML frontmatter + markdown body。
     使用默认格式（非 --format json），因为在反爬场景下默认格式更可靠。
-    当 defuddle 抓取失败（未知标题/反爬拦截）时作为降级方案。
     """
+    # 第一步：headless 快速尝试
     try:
         result = subprocess.run(
             [BAOYU_FETCH, url],
@@ -191,46 +228,46 @@ def fetch_wechat_article_baoyu(url):
             timeout=60
         )
         
-        if result.returncode != 0:
-            return {"error": f"baoyu-fetch 调用失败: {result.stderr}"}
-        
-        output = result.stdout.strip()
-        
-        # 解析 YAML frontmatter（---开头到---结尾之间的键值对）
-        metadata = {}
-        body = output
-        if output.startswith('---'):
-            parts = output.split('---', 2)
-            if len(parts) >= 3:
-                yaml_str = parts[1].strip()
-                try:
-                    metadata = yaml.safe_load(yaml_str) or {}
-                except Exception:
-                    pass
-                body = parts[2].strip()
-        
-        title = metadata.get("title") or ""
-        author = metadata.get("author") or ""
-        source_name = metadata.get("siteName") or author
-        
-        # 检测是否被验证码拦截（标题为"微信公众平台"或内容过短）
-        if title == "微信公众平台" or len(body) < 100:
-            return {"error": "baoyu-fetch 被微信验证码拦截"}
-        
-        return {
-            "title": title or "未知标题",
-            "author": author or "未知作者",
-            "source_name": source_name,
-            "publish_time": "",
-            "content": body,
-            "url": url
-        }
+        if result.returncode == 0 and result.stdout.strip():
+            parsed = _parse_baoyu_output(result.stdout, url)
+            if parsed:
+                return parsed
+            # headless 成功返回但被验证码拦截，继续第二步
+            print("  ⚠️ headless 模式被验证码拦截，尝试交互模式...")
+        else:
+            print("  ⚠️ headless 模式失败，尝试交互模式...")
     except FileNotFoundError:
         return {"error": f"baoyu-fetch 未安装: {BAOYU_FETCH}"}
     except subprocess.TimeoutExpired:
-        return {"error": "baoyu-fetch 调用超时"}
+        print("  ⚠️ headless 模式超时，尝试交互模式...")
+    except Exception:
+        print("  ⚠️ headless 模式异常，尝试交互模式...")
+    
+    # 第二步：交互模式（--wait-for interaction，等待验证码通过）
+    try:
+        result = subprocess.run(
+            [BAOYU_FETCH, url, "--wait-for", "interaction", "--interaction-timeout", "120000"],
+            capture_output=True,
+            text=True,
+            timeout=180  # 交互超时给更多时间
+        )
+        
+        if result.returncode != 0:
+            return {"error": f"baoyu-fetch 交互模式调用失败: {result.stderr}"}
+        
+        output = result.stdout.strip()
+        if not output:
+            return {"error": "baoyu-fetch 交互模式返回空内容"}
+        
+        parsed = _parse_baoyu_output(output, url)
+        if parsed:
+            return parsed
+        
+        return {"error": "baoyu-fetch 被微信验证码拦截（交互模式也未能通过）"}
+    except subprocess.TimeoutExpired:
+        return {"error": "baoyu-fetch 交互模式超时（180秒内未完成验证）"}
     except Exception as e:
-        return {"error": f"baoyu-fetch 抓取失败: {str(e)}"}
+        return {"error": f"baoyu-fetch 交互模式抓取失败: {str(e)}"}
 
 
 def fetch_wechat_article_defuddle(url):
