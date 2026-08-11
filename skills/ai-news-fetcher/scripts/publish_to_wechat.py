@@ -95,25 +95,27 @@ class WeChatNewsPublisher:
         print(f"✅ 微信公众号凭证已加载")
         print(f"   AppID: {self.appid[:8]}...")
     
-    def get_ai_news_markdown(self, days: int = 1, push_db: bool = True) -> str:
+    def get_ai_news_markdown(self, days: int = 1, push_db: bool = True, date: str = None) -> str:
         """
         直接使用 fetch_ai_news.py 中的 get_news_summary 获取 Markdown
         
         Args:
             days: 获取最近几天的资讯
             push_db: 是否推送到 devmaster.cn 数据库
+            date: 指定具体日期（YYYY-MM-DD）
         
         Returns:
             Markdown 内容
         """
-        print(f"📰 正在获取最近 {days} 天的 AI 资讯...")
+        date_label = date or f"最近 {days} 天"
+        print(f"📰 正在获取 {date_label} 的 AI 资讯...")
         
         try:
             fetch_module = _load_module("fetch_ai_news", FETCH_SCRIPT)
             
             # 直接调用 get_news_summary 函数
             if hasattr(fetch_module, 'get_news_summary'):
-                markdown_content = fetch_module.get_news_summary(days=days, push_db=push_db)
+                markdown_content = fetch_module.get_news_summary(days=days, push_db=push_db, date=date)
                 print(f"✅ 成功获取 Markdown")
                 print(f"   Markdown 长度: {len(markdown_content)} 字节")
                 return markdown_content
@@ -206,13 +208,15 @@ class WeChatNewsPublisher:
         wechat_module = _load_module("wechat_api_client", WECHAT_CLIENT_SCRIPT)
         return wechat_module.WeChatAPIClient(appid=self.appid, appsecret=self.appsecret)
     
-    def create_draft(self, html_content: str, cover_image: str = None, thumb_media_id: str = None) -> str:
+    def create_draft(self, html_content: str, cover_image: str = None, thumb_media_id: str = None, date: str = None) -> str:
         """创建草稿"""
         print(f"📝 正在创建草稿...")
         
-        today = datetime.now()
-        
-        title = f"AI 资讯日报-{today.strftime('%Y.%m.%d')}"
+        title_date = date or datetime.now().strftime('%Y.%m.%d')
+        if date:
+            # date 格式 YYYY-MM-DD，转为 YYYY.MM.DD
+            title_date = date.replace('-', '.')
+        title = f"AI 资讯日报-{title_date}"
         author = "AI资讯助手"
         digest = f"本期汇总了最新的 AI 相关资讯，涵盖编程工具、模型技术、产品应用和行业动态等内容。"
         content_source_url = ""
@@ -255,13 +259,13 @@ class WeChatNewsPublisher:
         except Exception as e:
             raise RuntimeError(f"发布文章失败: {e}")
     
-    def _save_markdown(self, markdown_content: str) -> None:
+    def _save_markdown(self, markdown_content: str, date: str = None) -> None:
         """将资讯 Markdown 保存到输出目录"""
         # 确保输出目录存在
         NEWS_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         
         # 文件名: ai-news-YYYY-MM-DD.md
-        today = datetime.now().strftime('%Y-%m-%d')
+        today = date or datetime.now().strftime('%Y-%m-%d')
         filename = f"ai-news-{today}.md"
         output_path = NEWS_OUTPUT_DIR / filename
         
@@ -398,17 +402,18 @@ class WeChatNewsPublisher:
             print(f"❌ 飞书推送网络错误: {e}")
             return False
     
-    def create_and_publish(self, days: int = 1, cover_image: str = None, thumb_media_id: str = None, create_only: bool = False, push_db: bool = True) -> str:
+    def create_and_publish(self, days: int = 1, cover_image: str = None, thumb_media_id: str = None, create_only: bool = False, push_db: bool = True, date: str = None) -> str:
         """创建并发布资讯"""
+        date_label = date or f"最近 {days} 天"
         print("=" * 50)
-        print(f"📰 开始处理 AI 资讯（最近 {days} 天）")
+        print(f"📰 开始处理 AI 资讯（{date_label}）")
         print("=" * 50)
         
         # 获取 Markdown
-        markdown_content = self.get_ai_news_markdown(days=days, push_db=push_db)
+        markdown_content = self.get_ai_news_markdown(days=days, push_db=push_db, date=date)
         
         # 保存 Markdown 文件到输出目录
-        self._save_markdown(markdown_content)
+        self._save_markdown(markdown_content, date=date)
         
         # 推送到飞书群
         self.push_to_feishu(markdown_content)
@@ -417,7 +422,7 @@ class WeChatNewsPublisher:
         html_content = self.convert_to_html(markdown_content)
         
         # 创建草稿
-        media_id = self.create_draft(html_content, cover_image=cover_image, thumb_media_id=thumb_media_id)
+        media_id = self.create_draft(html_content, cover_image=cover_image, thumb_media_id=thumb_media_id, date=date)
         
         if create_only:
             print("✅ 仅创建草稿模式，不进行发布")
@@ -441,6 +446,8 @@ def main():
     
     parser.add_argument('--days', type=int, default=1,
                         help='获取最近几天的资讯（默认1天）')
+    parser.add_argument('--date', type=str, default=None,
+                        help='指定具体日期 YYYY-MM-DD，仅获取该天的资讯（优先于 --days）')
     parser.add_argument('--create-draft', action='store_true',
                         help='只创建草稿，不发布')
     parser.add_argument('--publish', action='store_true',
@@ -473,9 +480,9 @@ def main():
         
         try:
             if args.create_draft:
-                publisher.create_and_publish(days=args.days, cover_image=cover_image, thumb_media_id=thumb_media_id, create_only=True, push_db=push_db)
+                publisher.create_and_publish(days=args.days, cover_image=cover_image, thumb_media_id=thumb_media_id, create_only=True, push_db=push_db, date=args.date)
             elif args.publish:
-                publisher.create_and_publish(days=args.days, cover_image=cover_image, thumb_media_id=thumb_media_id, create_only=False, push_db=push_db)
+                publisher.create_and_publish(days=args.days, cover_image=cover_image, thumb_media_id=thumb_media_id, create_only=False, push_db=push_db, date=args.date)
         except Exception as e:
             print(f"❌ 发布失败: {e}")
             sys.exit(1)
@@ -485,7 +492,7 @@ def main():
         print(f"   使用默认封面图素材ID: {DEFAULT_THUMB_MEDIA_ID}")
         print("   使用 --publish 来创建并发布")
         try:
-            publisher.create_and_publish(days=args.days, thumb_media_id=DEFAULT_THUMB_MEDIA_ID, create_only=True, push_db=True)
+            publisher.create_and_publish(days=args.days, thumb_media_id=DEFAULT_THUMB_MEDIA_ID, create_only=True, push_db=True, date=args.date)
         except Exception as e:
             print(f"❌ 创建草稿失败: {e}")
             sys.exit(1)

@@ -560,7 +560,7 @@ def format_news_markdown(news_list, categories, start_date, end_date, platform="
     return "\n".join(lines), filtered
 
 
-def get_news_summary(days: int = 1, classify: bool = True, platform: str = "feishu", method: str = "ai", push_db: bool = True) -> str:
+def get_news_summary(days: int = 1, classify: bool = True, platform: str = "feishu", method: str = "ai", push_db: bool = True, date: str = None) -> str:
     """获取并分类汇总 AI 资讯
     
     Args:
@@ -569,9 +569,15 @@ def get_news_summary(days: int = 1, classify: bool = True, platform: str = "feis
         platform: 输出平台类型
         method: 分类方法，'ai' (AI分类+规则兜底) 或 'rule' (仅规则分类)
         push_db: 是否推送到 devmaster.cn 数据库（默认 True）
+        date: 指定具体日期（YYYY-MM-DD），仅获取该天的资讯
     """
     today = datetime.now()
-    yesterday = today - timedelta(days=days)
+    if date:
+        target_date = datetime.strptime(date, "%Y-%m-%d")
+        yesterday = target_date
+        today = target_date + timedelta(days=1)
+    else:
+        yesterday = today - timedelta(days=days)
     after = yesterday.strftime("%Y%m%d")
     before = today.strftime("%Y%m%d")
     url = f"{RSS_API_BASE}/api/query?k={RSS_API_KEY}&content=0&before={before}&after={after}"
