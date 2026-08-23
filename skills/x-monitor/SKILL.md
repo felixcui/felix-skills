@@ -18,6 +18,8 @@ description: 监控指定 X 用户的新推文 + AI 领域每日热点话题，�
 - **twitter CLI**（`/Users/felix/.local/bin/twitter`）：AI 热点脚本通过 `twitter search --type top` 搜索 AI 相关热门推文（不依赖浏览器扩展，更稳定）
 - ⚠️ `twitter user-posts` 命令不稳定，经常超时无响应，每次运行能成功抓取的用户数量会有波动，属于已知问题
 - ⚠️ GLM-5-turbo 的 reasoning 模式（`reasoning_content`）非常慢，批量 prompt 常超时（120s+），不适合 cron 场景。`summarize_tweets.py` 的 `.env` 配置中若使用 GLM，会尝试批量 LLM 调用但快速失败降级到规则摘要（取前80字）。如需 LLM 摘要，建议换用非 reasoning 模型的 API（如 GPT-4o-mini）
+- ✅ **降级链已修复（2026-08-23）**：`summarize_tweets.py` 现按 docstring 实现「技能 .env (GLM) → ~/.hermes/config.yaml custom_providers（如 hongmacc gpt-5.4-mini）→ 规则摘要」三级降级。修复了两个 bug：① `call_llm` 的 `len(text)<300` 校验导致批量 JSON 响应永远被丢弃（现按场景传 max_len）；② 批量 JSON 解析失败无兜底（现自动提取首个 `[` 到末尾 `]` 子串重试）。GLM 配额耗尽（429，报错含"使用上限"）时自动走 hongmacc，实测稳定可用（~7s/次）。
+- ⚠️ **twitter CLI `search` 可能返回 HTTP 404（`not_found`）**：2026-08-23 起 `twitter search` 全部查询返回 404（与查询词无关，报错 `Failed to init ClientTransaction` 警告 + `{"ok":false,"error":{"code":"not_found"}}`），`fetch_ai_trending.py` 会静默输出空数组 `[]`。此时可用 opencli 临时备份（`opencli doctor` 确认 Extension connected 后）：`opencli twitter search "(AI OR LLM OR GPT OR Claude OR agent OR DeepSeek) lang:en" --product top --limit N --top-by-engagement N -f json`，注意 opencli 输出 `author` 是字符串、无 retweets/replies 指标、时间格式 `%a %b %d %H:%M:%S %z %Y`、URL 为 `https://x.com/<author>/status/<id>`。备份脚本示例：`/tmp/fetch_ai_trending_opencli.py`（本次 cron 用过，输出 schema 与 fetch_ai_trending.py 一致）。
 - ⚠️ `twitter user-posts` 认证失败时返回 `not_authenticated`，但 `fetch_new_tweets.py` 会**静默跳过**该用户（返回空数组），导致 cron 报告"暂无新推文"而非报错。这是已知缺陷，容易掩盖认证问题。
 - ⚠️ `opencli twitter search` 也可能超时，脚本已设置 60s timeout 并优雅降级
 - ⚠️ opencli 需要 Chrome Browser Bridge 扩展连接，未连接时所有命令返回 `BROWSER_CONNECT` 错误（exit code 69）

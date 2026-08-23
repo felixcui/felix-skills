@@ -687,7 +687,7 @@ def _call_llm_for_summary(api_key, base_url, model_name, prompt, max_length):
 
 
 def generate_summary_with_glm(content, title="", max_length=200):
-    """使用 GLM API 生成文章摘要，失败时自动降级到 hongmacc，再失败用规则"""
+    """使用 GLM API 生成文章摘要，失败时自动降级到 deepseek-v4-flash，再失败用规则"""
     if not content:
         return ""
 
@@ -724,34 +724,44 @@ def generate_summary_with_glm(content, title="", max_length=200):
                 print(f"   使用 GLM 生成摘要 ({len(summary)}字)")
                 return summary
             else:
-                print(f"   ⚠️ GLM 返回无效内容，尝试 hongmacc...")
+                print(f"   ⚠️ GLM 返回无效内容，尝试 deepseek-v4-flash...")
         else:
-            print("   ⚠️ GLM API key 未配置，尝试 hongmacc...")
+            print("   ⚠️ GLM API key 未配置，尝试 deepseek-v4-flash...")
     except Exception as e:
-        print(f"   ⚠️ GLM 不可用: {e}，尝试 hongmacc...")
+        print(f"   ⚠️ GLM 不可用: {e}，尝试 deepseek-v4-flash...")
 
-    # ---- 第2优先：hongmacc (gpt-5.4-mini，从 ~/.hermes/config.yaml 读取)----
+    # ---- 第2优先：deepseek-v4-flash（优先读 news-collect/.env 的 DEEPSEEK_*，回退到 Hermes 环境配置）----
     try:
-        import yaml as _yaml
-        config_path = Path.home() / ".hermes" / "config.yaml"
-        if config_path.exists():
-            cfg = _yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-            providers = cfg.get("providers", [])
-            for p in providers:
-                if isinstance(p, dict) and p.get("name") == "hongmacc":
-                    h_key = p.get("api_key", "")
-                    h_url = p.get("base_url", "https://hongmacc.com/v1")
-                    h_model = p.get("model", "gpt-5.4-mini")
-                    print(f"   使用 hongmacc ({h_model}) 生成摘要...")
-                    summary = _call_llm_for_summary(h_key, h_url, h_model, prompt, max_length)
-                    if summary:
-                        print(f"   使用 hongmacc 生成摘要 ({len(summary)}字)")
-                        return summary
-                    else:
-                        print(f"   ⚠️ hongmacc 返回无效内容，使用规则生成...")
-                    break
+        ds_env_path = Path(__file__).resolve().parent.parent / ".env"
+        ds_key, ds_url, ds_model = "", "https://api.deepseek.com", "deepseek-v4-flash"
+        if ds_env_path.exists():
+            for line in ds_env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("DEEPSEEK_API_KEY="):
+                    ds_key = line.split("=", 1)[1].strip()
+                elif line.startswith("DEEPSEEK_BASE_URL="):
+                    ds_url = line.split("=", 1)[1].strip()
+        if not ds_key:
+            ds_env_path = Path.home() / ".hermes" / ".env"
+            if ds_env_path.exists():
+                for line in ds_env_path.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if line.startswith("DEEPSEEK_API_KEY="):
+                        ds_key = line.split("=", 1)[1].strip()
+                    elif line.startswith("DEEPSEEK_BASE_URL="):
+                        ds_url = line.split("=", 1)[1].strip()
+        if ds_key:
+            print(f"   使用 deepseek-v4-flash ({ds_model}) 生成摘要...")
+            summary = _call_llm_for_summary(ds_key, ds_url, ds_model, prompt, max_length)
+            if summary:
+                print(f"   使用 deepseek-v4-flash 生成摘要 ({len(summary)}字)")
+                return summary
+            else:
+                print("   ⚠️ deepseek-v4-flash 返回无效内容，使用规则生成...")
+        else:
+            print("   ⚠️ DEEPSEEK_API_KEY 未配置，使用规则生成...")
     except Exception as e:
-        print(f"   ⚠️ hongmacc 不可用: {e}")
+        print(f"   ⚠️ deepseek-v4-flash 不可用: {e}")
 
     # ---- 最终降级：规则摘要 ----
     return generate_summary_rule_based(content, title, max_length)

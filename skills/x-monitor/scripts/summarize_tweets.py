@@ -29,7 +29,7 @@ TIME_STR = NOW.strftime("%H:%M")
 
 
 def load_llm_config():
-    """加载 LLM 配置，从技能自带的 .env 文件读取"""
+    """加载 LLM 配置，降级链：技能 .env（GLM）→ ~/.hermes/config.yaml custom_providers（如 hongmacc）"""
     configs = []
     env_path = os.path.join(SKILL_DIR, ".env")
 
@@ -48,10 +48,25 @@ def load_llm_config():
     if api_key and base_url and model_name:
         configs.append({"name": f"GLM ({model_name})", "api_key": api_key, "base_url": base_url, "model": model_name})
 
+    # 从 ~/.hermes/config.yaml 的 custom_providers 读取备用 provider（如 hongmacc gpt-5.4-mini）
+    try:
+        import yaml
+        cfg_path = os.path.expanduser("~/.hermes/config.yaml")
+        if os.path.exists(cfg_path):
+            with open(cfg_path, encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            for p in cfg.get("custom_providers", []):
+                name = p.get("name", "")
+                if name and p.get("api_key") and p.get("base_url") and p.get("model"):
+                    if name not in [c["name"] for c in configs]:
+                        configs.append({"name": f"备用 ({name})", "api_key": p["api_key"], "base_url": p["base_url"], "model": p["model"]})
+    except Exception:
+        pass
+
     return configs
 
 
-def call_llm(config, prompt, timeout=30):
+def call_llm(config, prompt, timeout=30, max_len=300):
     """调用 LLM API，返回文本或 None"""
     import requests
     try:
@@ -75,7 +90,7 @@ def call_llm(config, prompt, timeout=30):
             text = re.sub(r'^["\']|["\']$', '', text)
             # 清理常见前缀
             text = re.sub(r'^(摘要|总结|Summary)[:：]\s*', '', text)
-            if 10 < len(text) < 300:
+            if 10 < len(text) < max_len:
                 if not text.endswith(('。', '！', '？', '~')):
                     text += '。'
                 return text
@@ -103,28 +118,35 @@ def summarize_batch(texts, max_chars=2000):
 
     for config in configs:
         print(f"  使用 {config['name']} 批量总结 {len(texts)} 条推文...", file=sys.stderr)
-        result = call_llm(config, prompt, timeout=120)
+        result = call_llm(config, prompt, timeout=120, max_len=20000)
         if result:
             # 尝试解析 JSON
+            cleaned = result.strip()
             try:
-                # 清理可能的 markdown 代码块
-                cleaned = result.strip()
                 if cleaned.startswith("```"):
                     cleaned = re.sub(r'^```\w*\n?', '', cleaned)
                     cleaned = re.sub(r'\n?```$', '', cleaned)
                 parsed = json.loads(cleaned)
-                if isinstance(parsed, list) and len(parsed) == len(texts):
-                    summaries = [None] * len(texts)
-                    for item in parsed:
-                        idx = item.get("i", -1)
-                        if 0 <= idx < len(texts):
-                            summaries[idx] = item.get("s", "")
-                    if all(summaries):
-                        return summaries
-                    # 部分成功，补充缺失的
-                    return summaries
             except (json.JSONDecodeError, TypeError):
-                pass
+                # 兜底：提取首个 [ 到末尾 ] 的 JSON 子串（模型可能混入额外说明文字）
+                try:
+                    start, end = cleaned.find("["), cleaned.rfind("]")
+                    if start != -1 and end > start:
+                        parsed = json.loads(cleaned[start:end + 1])
+                    else:
+                        parsed = None
+                except (json.JSONDecodeError, TypeError):
+                    parsed = None
+            if isinstance(parsed, list) and len(parsed) == len(texts):
+                summaries = [None] * len(texts)
+                for item in parsed:
+                    idx = item.get("i", -1)
+                    if 0 <= idx < len(texts):
+                        summaries[idx] = item.get("s", "")
+                if all(summaries):
+                    return summaries
+                # 部分成功，补充缺失的
+                return summaries
             print(f"  ⚠️ JSON 解析失败，尝试逐条...", file=sys.stderr)
 
     return None

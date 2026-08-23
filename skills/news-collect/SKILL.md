@@ -315,23 +315,23 @@ IMA_API_BASE = "https://ima.qq.com"
 
 ### 摘要引擎三级降级链
 
-降级顺序：**GLM → hongmacc (gpt-5.4-mini) → 规则摘要**。每个 LLM 超时 60 秒。
+降级顺序：**GLM → deepseek-v4-flash → 规则摘要**。每个 LLM 超时 60 秒。
 
 | 引擎 | 配置来源 | 模型 | 触发条件 |
 |------|---------|------|---------|
 | GLM（第1优先） | `news-collect/.env`（OPENAI_*） | glm-5-turbo | 默认 |
-| hongmacc（第2优先） | `~/.hermes/config.yaml`（providers） | gpt-5.4-mini | GLM 超时/报错/返回无效内容 |
+| deepseek-v4-flash（第2优先） | `news-collect/.env`（DEEPSEEK_*，回退 `~/.hermes/.env`） | deepseek-v4-flash | GLM 超时/报错/返回无效内容 |
 | 规则（兜底） | 内置 | — | 两个 LLM 都失败 |
 
 **已知故障模式**：
 
 | 故障 | 症状 | 处理 |
 |------|------|------|
-| GLM 超时 | `HTTPSConnectionPool: Read timed out` | 自动降级到 hongmacc |
-| GLM 输出分析过程 | `⚠️ GLM 返回无效内容，尝试 hongmacc...` | 自动降级到 hongmacc |
-| GLM 返回 `None` | `TypeError: object of type 'NoneType'` | 自动降级到 hongmacc |
-| GLM 429 配额耗尽 | `Error code: 429 - '您已达到每周/每月使用上限'` | 自动降级到 hongmacc/规则；有明确重置时间，重置后自动恢复 |
-| hongmacc 也失败 | 极少见 | 降级到规则摘要 |
+| GLM 超时 | `HTTPSConnectionPool: Read timed out` | 自动降级到 deepseek-v4-flash |
+| GLM 输出分析过程 | `⚠️ GLM 返回无效内容，尝试 deepseek-v4-flash...` | 自动降级到 deepseek-v4-flash |
+| GLM 返回 `None` | `TypeError: object of type 'NoneType'` | 自动降级到 deepseek-v4-flash |
+| GLM 配额耗尽（如 code 1310「已达到每周/每月使用上限」） | `Error code: 1310/429` | 自动降级到 deepseek-v4-flash；有明确重置时间，重置后自动恢复 |
+| deepseek-v4-flash 也失败 | 极少见 | 降级到规则摘要 |
 
 **无需手动干预**——脚本已内置三级降级。如需强制使用规则引擎：
 
@@ -390,7 +390,7 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 
 ### SPA / Web 应用产品页导致摘要为空或无效
 
-当 URL 指向 SPA（单页应用）或 Web 应用产品页（如 SaaS 工具首页）而非文章时，`collect_v2.py` 抓取到的内容只有 UI 元素文本（按钮、标签、导航等），没有实质性文章正文。GLM 和 hongmacc 通常返回极短或无效摘要（如"。"），规则引擎也会产出噪声。
+当 URL 指向 SPA（单页应用）或 Web 应用产品页（如 SaaS 工具首页）而非文章时，`collect_v2.py` 抓取到的内容只有 UI 元素文本（按钮、标签、导航等），没有实质性文章正文。GLM 和 deepseek-v4-flash 通常返回极短或无效摘要（如"。"），规则引擎也会产出噪声。
 
 **诊断信号**：
 - 摘要长度 ≤ 5 字符，或内容仅为标点/无意义字符
@@ -408,7 +408,7 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 
 ### SPA / Web 应用产品页导致摘要为空或无效
 
-当 URL 指向 SPA（单页应用）或 Web 应用产品页（如 SaaS 工具首页）而非文章时，`collect_v2.py` 抓取到的内容只有 UI 元素文本（按钮、标签、导航等），没有实质性文章正文。GLM 和 hongmacc 通常返回极短或无效摘要（如"。"），规则引擎也会产出噪声。
+当 URL 指向 SPA（单页应用）或 Web 应用产品页（如 SaaS 工具首页）而非文章时，`collect_v2.py` 抓取到的内容只有 UI 元素文本（按钮、标签、导航等），没有实质性文章正文。GLM 和 deepseek-v4-flash 通常返回极短或无效摘要（如"。"），规则引擎也会产出噪声。
 
 **诊断信号**：
 - 摘要长度 ≤ 5 字符，或内容仅为标点/无意义字符
@@ -511,13 +511,13 @@ GLM 降级到规则提取时，微信文章正文开头常含作者行（`作者
 3. **行内清洗**：去除 markdown 格式标记、残留的 `作者｜xxx 编辑｜xxx` 标记
 4. **参数优化**：intro 区域从 500 扩大到 800 字符，句子长度限制从 20-150 放宽到 15-200，补充更多句子到摘要
 
-**降级链路**：当前为 GLM → hongmacc (gpt-5.4-mini) → 规则摘要。详见上方「摘要引擎三级降级链」章节。
+**降级链路**：当前为 GLM → deepseek-v4-flash → 规则摘要。详见上方「摘要引擎三级降级链」章节。
 
-**手动修复已有错误摘要**：如果摘要已经推送到飞书且有问题，可用 hongmacc 重新生成摘要并更新 Markdown + 重新推送 webhook：
+**手动修复已有错误摘要**：如果摘要已经推送到飞书且有问题，可用 deepseek-v4-flash 重新生成摘要并更新 Markdown + 重新推送 webhook：
 
 ```python
-# 从 ~/.hermes/config.yaml 的 custom_providers[0] 读取 hongmacc 配置
-# base_url: https://hongmacc.com/v1, model: gpt-5.4-mini
+# 从 news-collect/.env 读取 DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL（回退 ~/.hermes/.env）
+# base_url: https://api.deepseek.com, model: deepseek-v4-flash
 ```
 
 ### 微信文章反爬（requests 抓取失败）
@@ -744,6 +744,9 @@ news-collect/
 ```
 
 ## 更新日志
+
+### v2.4 (2026-08-23)
+- 🔧 变更：摘要降级链第2优先从 hongmacc (gpt-5.4-mini) 改为 deepseek-v4-flash — 配置优先从 `news-collect/.env` 读取 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL`（https://api.deepseek.com），回退到 Hermes 环境配置。触发条件不变（GLM 超时/报错/返回无效内容时降级）
 
 ### v2.3 (2026-08-06)
 - 🔧 改进：GLM 思考泄漏兼容 — 新增 `_is_thinking_leak()` + `_extract_summary_from_thinking()`，当 GLM 输出分析过程时自动提取有效摘要（策略：标记提取→过滤分析行→兜底取最后段落），而非直接丢弃降级
