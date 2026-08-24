@@ -22,10 +22,29 @@ try:
 except ImportError:
     pass
 
-# ========== OpenAI API 配置 ==========
+# ========== 分类模型配置（降级链：GLM → deepseek → 关键词规则） ==========
+# GLM（第一优先，从 skill 根目录 .env 读取）
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://dashscope.aliyuncs.com/compatible-mode/v1')
-OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'qwen-plus')
+OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://open.bigmodel.cn/api/paas/v4').strip()
+OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'glm-5-turbo')
+
+# deepseek（第二优先：优先 skill 根目录 .env，回退 ~/.hermes/.env）
+DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
+DEEPSEEK_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com').strip()
+DEEPSEEK_MODEL = os.getenv('DEEPSEEK_MODEL', 'deepseek-v4-flash')
+
+# 从 ~/.hermes/.env 回退读取 deepseek 配置（不覆盖已从 skill .env 读到的值）
+if not DEEPSEEK_API_KEY:
+    _hermes_env = Path.home() / ".hermes" / ".env"
+    if _hermes_env.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(_hermes_env)
+            DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
+            DEEPSEEK_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com').strip()
+            DEEPSEEK_MODEL = os.getenv('DEEPSEEK_MODEL', 'deepseek-v4-flash')
+        except ImportError:
+            pass
 
 # 需要过滤的公众号ID列表
 EXCLUDED_BIZ_IDS = {
@@ -64,15 +83,11 @@ CATEGORY_ICONS = {
 }
 
 
-def classify_news_with_ai(news_list):
-    """使用 OpenAI 兼容 API 进行智能分类（10分类新版）"""
+def _classify_with_llm(news_list, api_key, base_url, model, provider_label):
+    """使用指定 LLM（OpenAI 兼容 API）进行智能分类（10分类新版）
     
-    if not news_list:
-        return {}
-    
-    if not OPENAI_API_KEY or OPENAI_API_KEY == 'your_api_key':
-        print("⚠️ OPENAI_API_KEY 未配置，使用关键词分类")
-        return classify_by_keywords(news_list)
+    成功返回 categories dict，失败返回 None（由调用方负责降级）。
+    """
     
     # 将新闻标题拼接成提示
     titles = "\n".join([f"{i+1}. {item['title']}" for i, item in enumerate(news_list)])
@@ -154,16 +169,16 @@ def classify_news_with_ai(news_list):
 只输出 JSON，不要输出其他内容。"""
 
     try:
-        print(f"🤖 使用 {OPENAI_MODEL} 进行 AI 分类...")
+        print(f"🤖 使用 {model} 进行 AI 分类...")
         
         client = OpenAI(
-            api_key=OPENAI_API_KEY,
-            base_url=OPENAI_BASE_URL,
-            timeout=httpx.Timeout(300.0, connect=15.0),
+            api_key=api_key,
+            base_url=base_url,
+            timeout=httpx.Timeout(60.0, connect=15.0),
         )
         
         response = client.chat.completions.create(
-            model=OPENAI_MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": "你是一个专业的 AI 资讯分类助手，擅长将科技资讯准确归类。只输出 JSON，不要输出其他内容。"},
                 {"role": "user", "content": prompt}
@@ -199,13 +214,39 @@ def classify_news_with_ai(news_list):
                 categories["其他"] = []
             categories["其他"].extend(missing)
         
-        print(f"✅ AI 分类完成")
+        print(f"✅ {provider_label} 分类完成")
         return categories
         
     except Exception as e:
-        print(f"❌ AI 分类失败: {str(e)}")
+        print(f"❌ {provider_label} 分类失败: {str(e)}")
+        return None
+
+
+def classify_news_with_ai(news_list):
+    """三级降级分类：GLM → deepseek → 关键词规则（10分类新版）"""
     
-    # 如果 AI 分类失败，使用关键词分类作为后备
+    if not news_list:
+        return {}
+    
+    # 第一优先：GLM
+    if OPENAI_API_KEY and OPENAI_API_KEY != 'your_api_key':
+        categories = _classify_with_llm(news_list, OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL, "GLM")
+        if categories is not None:
+            return categories
+        print("⚠️ GLM 分类失败，尝试 deepseek...")
+    else:
+        print("⚠️ GLM 未配置（OPENAI_API_KEY），尝试 deepseek...")
+    
+    # 第二优先：deepseek
+    if DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != 'your_api_key':
+        categories = _classify_with_llm(news_list, DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, "deepseek")
+        if categories is not None:
+            return categories
+        print("⚠️ deepseek 分类失败，使用关键词分类...")
+    else:
+        print("⚠️ DEEPSEEK_API_KEY 未配置，跳过 deepseek")
+    
+    # 兜底：关键词规则分类
     print("⚠️ 使用关键词分类作为后备方案")
     return classify_by_keywords(news_list)
 

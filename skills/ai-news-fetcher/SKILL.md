@@ -71,11 +71,18 @@ BAOYU_MARKDOWN_TO_HTML_DIR=~/work/skills/baoyu-skills/skills/baoyu-markdown-to-h
 # devmaster.cn API 配置（AI 资讯入库）
 DEVELMASTER_API_KEY=your_api_key
 
-# OpenAI 兼容 API 配置（AI 智能分类时需要，不配置则使用关键词分类）
+# OpenAI 兼容 API 配置（GLM 智能分类，第一优先；不配置则走 deepseek/关键词分类）
 OPENAI_API_KEY=your_api_key
-OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-OPENAI_MODEL=qwen-plus
+OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+OPENAI_MODEL=glm-5-turbo
+
+# deepseek 配置（分类降级链第二优先；不配置则回退 ~/.hermes/.env，再失败走关键词分类）
+DEEPSEEK_API_KEY=your_api_key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
 ```
+
+> **分类降级链**：GLM（第一优先）→ deepseek-v4-flash（第二优先）→ 关键词规则（兜底）。GLM 配额耗尽（code 1310）或超时自动降级，无需手动干预。
 
 ### 3. devmaster.cn 资讯入库
 
@@ -207,41 +214,37 @@ cd ~/.hermes/skills/felix-skills/skills/ai-news-fetcher && python3 scripts/publi
 
 ## 已知问题 / Pitfalls
 
-### ⚠️ 智谱 API 不稳定（glm-5-turbo）
+### ⚠️ 分类降级链：GLM → deepseek-v4-flash → 关键词规则（2026-08-24 更新）
 
-`.env` 配置的智谱 API 经常超时（120s+ 无响应），无论是用于 `method="ai"` 分类还是二次排序。
+`.env` 配置的智谱 API（glm-5-turbo）不稳定：经常超时（120s+ 无响应），且每周/每月有配额上限（code 1310，如「已达到每周/每月使用上限，限额将在 X 重置」）。
 
-**推荐方案**：用 hongmacc API（`gpt-5.4-mini`，从 `~/.hermes/config.yaml` 的 `custom_providers` 读取）做 LLM 排序，比智谱 API 稳定得多（~20s 完成）。
+**当前三级降级链**（`classify_news_with_ai` 内置，无需手动干预）：
+
+| 优先 | 引擎 | 配置来源 | 模型 | 触发条件 |
+|------|------|---------|------|---------|
+| 第1 | GLM | `.env`（OPENAI_*） | glm-5-turbo | 默认 |
+| 第2 | deepseek | `.env`（DEEPSEEK_*），回退 `~/.hermes/.env` | deepseek-v4-flash | GLM 超时/报错/返回无效内容 |
+| 第3 | 关键词规则 | 内置 | — | 两个 LLM 都失败 |
+
+- **GLM 配额 1310**：`Error code: 429` + `code 1310` → 自动降级 deepseek；有明确重置时间，重置后自动恢复
+- **超时**：`classify_news_with_ai` 内每个 LLM 请求 60s 超时（2026-08-24 从 300s 缩短，降低 cron 超时风险）
+- **强制规则分类**：`python3 scripts/fetch_ai_news.py --method rule`
 
 ### ⚠️ GLM API 超时保护
 
-当前 `.env` 配置使用 `glm-5-turbo`（智谱 AI 开放平台），该 API 有三种失败模式：
+当前 `.env` 配置使用 `glm-5-turbo`（智谱 AI 开放平台），该 API 的失败模式及降级：
 
-| 模式 | 表现 | 影响 |
+| 模式 | 表现 | 降级 |
 |------|------|------|
-| **限流（429）** | 返回 `Error code: 429`，脚本自动降级为关键词分类 | 无害，降级自动发生 |
-| **挂起超时** | API 无响应，OpenAI client 在 **120 秒**后超时，脚本自动降级为关键词分类 | ⚠️ 120s 很长，加上后续步骤可能超过 cron 的 300s 总超时 |
-| **摘要质量差** | GLM 返回分析过程（如 "1. Analyze the Request..."）而非正式摘要 | 摘要不可用，需降级为规则引擎 |
+| **限流/配额（429 / code 1310）** | 返回 `Error code: 429`，`code 1310`（每周/每月上限） | 自动降级 deepseek-v4-flash |
+| **挂起超时** | API 无响应，OpenAI client 在 **60 秒**后超时 | 自动降级 deepseek-v4-flash |
+| **分类质量差** | GLM 返回分析过程而非 JSON 分类结果 | `json.loads` 失败 → 降级 deepseek-v4-flash |
 
-**代码实际超时设置**（`fetch_ai_news.py` 第 155 行）：`httpx.Timeout(300.0, connect=15.0)`。
+**代码超时设置**（`fetch_ai_news.py` `_classify_with_llm`）：`httpx.Timeout(60.0, connect=15.0)`（2026-08-24 从 300s 缩短）。
 
-**默认使用 `method="ai"`（大模型分类），失败自动降级为关键词分类。**
+**默认使用 `method="ai"`（大模型分类），失败自动降级：GLM → deepseek-v4-flash → 关键词规则。**
 - `method="ai"` 使用 OpenAI 兼容 API 进行智能分类，超时或失败时自动降级
 - `method="rule"` 仅用纯关键词分类，可在 AI API 不可用时手动指定
-
-#### ⚠️ Cron 超时紧急修复（2026-07-17 验证）
-
-当智谱 API 挂起导致 cron 超时时，**临时降级为关键词分类**的方法：
-
-1. Patch `publish_to_wechat.py` 第 115 行，临时改为 `method="rule"`：
-   ```python
-   # publish_to_wechat.py 第 115 行
-   markdown_content = fetch_module.get_news_summary(days=days, method="rule")
-   ```
-2. 运行 `python3 scripts/publish_to_wechat.py --create-draft`
-3. **运行完毕后立即 revert patch**，恢复默认 `method="ai"`
-
-> **推荐长期修复**：将 `fetch_ai_news.py` 中 `httpx.Timeout(300.0, connect=15.0)` 改为 `httpx.Timeout(60.0, connect=10.0)`，或直接在 `.env` 中切换到 hongmacc API（`gpt-5.4-mini`）。
 
 ### ⚠️ `.env` 文件位置
 
@@ -249,9 +252,11 @@ cd ~/.hermes/skills/felix-skills/skills/ai-news-fetcher && python3 scripts/publi
 
 归档备份位置：`~/.hermes/skills/.archive/ai-news-fetcher/.env`
 
-### ⚠️ `.env` 中 OPENAI_BASE_URL 问题
+### ✅ `.env` 中 OPENAI_BASE_URL 问题（2026-08-24 已修复）
 
-`OPENAI_BASE_URL= https://open.bigmodel.cn/api/coding/paas/v4` 值前有多余空格，且 `coding/paas/v4` 是编码专用端点（可能返回空响应）。标准端点为 `https://open.bigmodel.cn/api/paas/v4`。读取时需 `.strip()` 处理空格。
+曾存在：`OPENAI_BASE_URL= https://open.bigmodel.cn/api/coding/paas/v4` 值前有多余空格，且 `coding/paas/v4` 是编码专用端点（可能返回空响应）。标准端点为 `https://open.bigmodel.cn/api/paas/v4`。
+
+**2026-08-24 修复**：`fetch_ai_news.py` 读取时已 `.strip()` 处理空格，并将默认值改为标准端点 `https://open.bigmodel.cn/api/paas/v4`。
 
 ### ⚠️ `AI_NEWS_API_BASE` 末尾斜杠导致 404
 
