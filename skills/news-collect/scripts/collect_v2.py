@@ -649,7 +649,7 @@ def _call_llm_for_summary(api_key, base_url, model_name, prompt, max_length):
         json={
             "model": model_name,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 1024,
+            "max_tokens": 4096,
             "temperature": 0.3,
         },
         timeout=60,
@@ -706,7 +706,7 @@ def generate_summary_with_glm(content, title="", max_length=200):
     # ---- 第1优先：GLM（从 .env 读取）----
     try:
         skill_env_path = Path(__file__).resolve().parent.parent / ".env"
-        api_key, base_url, model_name = "", "https://open.bigmodel.cn/api/paas/v4", "glm-5-turbo"
+        api_key, base_url, model_name = "", "https://open.bigmodel.cn/api/paas/v4", "glm-5.3-flash"
         if skill_env_path.exists():
             for line in skill_env_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
