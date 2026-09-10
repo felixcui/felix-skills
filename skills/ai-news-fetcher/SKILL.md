@@ -297,6 +297,12 @@ os.environ['AI_NEWS_API_BASE'] = api_base.rstrip('/')
 
 > **改进建议**：把 `DEFAULT_THUMB_MEDIA_ID` 存到 `.env`（如 `WECHAT_THUMB_MEDIA_ID=...`），而非硬编码在 SKILL.md 示例脚本里。更新 `.env` 比 patch SKILL.md 更方便，且 cron 脚本可直接 `os.getenv('WECHAT_THUMB_MEDIA_ID')` 读取。
 
+### ⚠️ 微信 45166 invalid content hint：markdown 标题含未转义 `]`（2026-09-10）
+
+文章标题本身含 `]`（如 `【豆包工作]` 半角括号混用）时，markdown 链接 `[标题](url)` 的解析会被标题内的 `]` 提前截断，生成畸形链接文本/URL，微信 API 报 `45166: invalid content hint`，草稿创建失败。修复：把标题中的半角 `]` 改为全角 `】` 后重新生成 HTML 再提交即可成功。草稿 API 的 title 偶发乱码（编码问题）但不影响内容，后台可手动改标题。
+
+另注意：`--date <今天>` 查询当天数据可能为空（RSS 数据源延迟），重试时应使用默认「最近 1 天」。`--date` 模式会覆盖同名日报 md 文件。
+
 ### 微信公众号发布
 
 - **cron 和手动场景都直接调用 `publish_to_wechat.py --create-draft`**，不要分步执行
