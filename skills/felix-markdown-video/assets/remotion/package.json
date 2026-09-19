@@ -1,0 +1,6 @@
+{
+  "name": "markdown-short-video", "private": true, "version": "1.0.0",
+  "scripts": {"studio": "remotion studio src/index.tsx", "render": "remotion render src/index.tsx Video ../video.mp4 --codec=h264 --audio-codec=aac --pixel-format=yuv420p --overwrite=false", "cover": "remotion still src/index.tsx Cover ../cover.png --overwrite=false"},
+  "dependencies": {"remotion": "4.0.526", "@remotion/cli": "4.0.526", "@remotion/media": "4.0.526", "react": "19.2.3", "react-dom": "19.2.3"},
+  "devDependencies": {"@types/react": "19.2.7", "typescript": "5.9.3"}
+}
