@@ -319,7 +319,7 @@ IMA_API_BASE = "https://ima.qq.com"
 
 | 引擎 | 配置来源 | 模型 | 触发条件 |
 |------|---------|------|---------|
-| GLM（第1优先） | `news-collect/.env`（OPENAI_*） | glm-5-turbo | 默认 |
+| Hermes 主模型（第1优先） | `news-collect/.env`（OPENAI_*） | deepseek-v4.1-flash | 默认 |
 | deepseek-v4-flash（第2优先） | `news-collect/.env`（DEEPSEEK_*，回退 `~/.hermes/.env`） | deepseek-v4-flash | GLM 超时/报错/返回无效内容 |
 | 规则（兜底） | 内置 | — | 两个 LLM 都失败 |
 

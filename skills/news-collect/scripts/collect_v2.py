@@ -643,17 +643,30 @@ def _call_llm_for_summary(api_key, base_url, model_name, prompt, max_length):
     if not chat_url.endswith("/chat/completions"):
         chat_url = chat_url.rstrip("/") + "/chat/completions"
 
+    payload = {
+        "model": model_name,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 4096,
+        "temperature": 0.3,
+    }
+    # 推理模型（如 deepseek-v4.1-flash）默认会输出 reasoning_content，
+    # 既容易把思考过程泄漏进摘要，又会吃掉 max_tokens。优先请求关闭思考。
+    payload_thinking_off = dict(payload, enable_thinking=False)
+
     resp = requests.post(
         chat_url,
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={
-            "model": model_name,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 4096,
-            "temperature": 0.3,
-        },
+        json=payload_thinking_off,
         timeout=60,
     )
+    if resp.status_code != 200:
+        # 端点不支持 enable_thinking 参数时回退重试
+        resp = requests.post(
+            chat_url,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=60,
+        )
 
     if resp.status_code == 200:
         msg = resp.json()["choices"][0]["message"]
@@ -703,10 +716,10 @@ def generate_summary_with_glm(content, title="", max_length=200):
 
 摘要："""
 
-    # ---- 第1优先：GLM（从 .env 读取）----
+    # ---- 第1优先：Hermes 主模型（从 .env 读取）----
     try:
         skill_env_path = Path(__file__).resolve().parent.parent / ".env"
-        api_key, base_url, model_name = "", "https://open.bigmodel.cn/api/paas/v4", "glm-5.3-flash"
+        api_key, base_url, model_name = "", "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1", "deepseek-v4.1-flash"
         if skill_env_path.exists():
             for line in skill_env_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
@@ -718,17 +731,17 @@ def generate_summary_with_glm(content, title="", max_length=200):
                     model_name = line.split("=", 1)[1].strip()
 
         if api_key:
-            print(f"   使用 GLM ({model_name}) 生成摘要...")
+            print(f"   使用主模型 ({model_name}) 生成摘要...")
             summary = _call_llm_for_summary(api_key, base_url, model_name, prompt, max_length)
             if summary:
-                print(f"   使用 GLM 生成摘要 ({len(summary)}字)")
+                print(f"   使用主模型 生成摘要 ({len(summary)}字)")
                 return summary
             else:
-                print(f"   ⚠️ GLM 返回无效内容，尝试 deepseek-v4-flash...")
+                print(f"   ⚠️ 主模型返回无效内容，尝试 deepseek-v4-flash...")
         else:
-            print("   ⚠️ GLM API key 未配置，尝试 deepseek-v4-flash...")
+            print("   ⚠️ 主模型 API key 未配置，尝试 deepseek-v4-flash...")
     except Exception as e:
-        print(f"   ⚠️ GLM 不可用: {e}，尝试 deepseek-v4-flash...")
+        print(f"   ⚠️ 主模型不可用: {e}，尝试 deepseek-v4-flash...")
 
     # ---- 第2优先：deepseek-v4-flash（优先读 news-collect/.env 的 DEEPSEEK_*，回退到 Hermes 环境配置）----
     try:

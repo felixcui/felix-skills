@@ -22,11 +22,11 @@ try:
 except ImportError:
     pass
 
-# ========== 分类模型配置（降级链：GLM → deepseek → 关键词规则） ==========
-# GLM（第一优先，从 skill 根目录 .env 读取）
+# ========== 分类模型配置（降级链：Hermes 主模型 → deepseek → 关键词规则） ==========
+# 主模型（第一优先，从 skill 根目录 .env 读取）
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://open.bigmodel.cn/api/paas/v4').strip()
-OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'glm-5-turbo')
+OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1').strip()
+OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'deepseek-v4.1-flash')
 
 # deepseek（第二优先：优先 skill 根目录 .env，回退 ~/.hermes/.env）
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
@@ -246,15 +246,30 @@ def _classify_with_llm(news_list, api_key, base_url, model, provider_label):
             timeout=httpx.Timeout(60.0, connect=15.0),
         )
         
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "你是一个专业的 AI 资讯分类助手，擅长将科技资讯准确归类。只输出 JSON，不要输出其他内容。"},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.1,
-            response_format={"type": "json_object"},
-        )
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "你是一个专业的 AI 资讯分类助手，擅长将科技资讯准确归类。只输出 JSON，不要输出其他内容。"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                response_format={"type": "json_object"},
+                # 推理模型默认会输出思考内容，分类只需要 JSON，关闭思考
+                extra_body={"enable_thinking": False},
+            )
+        except Exception as e:
+            # 端点不支持 enable_thinking 时回退重试
+            print(f"ℹ️ {provider_label} 不支持 enable_thinking，回退重试: {str(e)[:80]}")
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "你是一个专业的 AI 资讯分类助手，擅长将科技资讯准确归类。只输出 JSON，不要输出其他内容。"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                response_format={"type": "json_object"},
+            )
         
         response_text = response.choices[0].message.content.strip()
         
@@ -292,19 +307,19 @@ def _classify_with_llm(news_list, api_key, base_url, model, provider_label):
 
 
 def classify_news_with_ai(news_list):
-    """三级降级分类：GLM → deepseek → 关键词规则（10分类新版）"""
+    """三级降级分类：Hermes 主模型 → deepseek → 关键词规则（10分类新版）"""
     
     if not news_list:
         return {}
     
-    # 第一优先：GLM
+    # 第一优先：Hermes 主模型
     if OPENAI_API_KEY and OPENAI_API_KEY != 'your_api_key':
-        categories = _classify_with_llm(news_list, OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL, "GLM")
+        categories = _classify_with_llm(news_list, OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL, "主模型")
         if categories is not None:
             return categories
-        print("⚠️ GLM 分类失败，尝试 deepseek...")
+        print("⚠️ 主模型分类失败，尝试 deepseek...")
     else:
-        print("⚠️ GLM 未配置（OPENAI_API_KEY），尝试 deepseek...")
+        print("⚠️ 主模型未配置（OPENAI_API_KEY），尝试 deepseek...")
     
     # 第二优先：deepseek
     if DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != 'your_api_key':

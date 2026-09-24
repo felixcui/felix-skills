@@ -73,8 +73,8 @@ DEVELMASTER_API_KEY=your_api_key
 
 # OpenAI 兼容 API 配置（GLM 智能分类，第一优先；不配置则走 deepseek/关键词分类）
 OPENAI_API_KEY=your_api_key
-OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-OPENAI_MODEL=glm-5-turbo
+OPENAI_BASE_URL=https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1
+OPENAI_MODEL=deepseek-v4.1-flash
 
 # deepseek 配置（分类降级链第二优先；不配置则回退 ~/.hermes/.env，再失败走关键词分类）
 DEEPSEEK_API_KEY=your_api_key
@@ -216,13 +216,13 @@ cd ~/.hermes/skills/felix-skills/skills/ai-news-fetcher && python3 scripts/publi
 
 ### ⚠️ 分类降级链：GLM → deepseek-v4-flash → 关键词规则（2026-08-24 更新）
 
-`.env` 配置的智谱 API（glm-5-turbo）不稳定：经常超时（120s+ 无响应），且每周/每月有配额上限（code 1310，如「已达到每周/每月使用上限，限额将在 X 重置」）。
+`.env` 配置的模型端点可能不稳定：会超时（120s+ 无响应）或遇配额上限（如 GLM code 1310「已达到每周/每月使用上限」）。
 
 **当前三级降级链**（`classify_news_with_ai` 内置，无需手动干预）：
 
 | 优先 | 引擎 | 配置来源 | 模型 | 触发条件 |
 |------|------|---------|------|---------|
-| 第1 | GLM | `.env`（OPENAI_*） | glm-5-turbo | 默认 |
+| 第1 | Hermes 主模型 | `.env`（OPENAI_*） | deepseek-v4.1-flash | 默认 |
 | 第2 | deepseek | `.env`（DEEPSEEK_*），回退 `~/.hermes/.env` | deepseek-v4-flash | GLM 超时/报错/返回无效内容 |
 | 第3 | 关键词规则 | 内置 | — | 两个 LLM 都失败 |
 
@@ -232,7 +232,7 @@ cd ~/.hermes/skills/felix-skills/skills/ai-news-fetcher && python3 scripts/publi
 
 ### ⚠️ GLM API 超时保护
 
-当前 `.env` 配置使用 `glm-5-turbo`（智谱 AI 开放平台），该 API 的失败模式及降级：
+当前 `.env` 配置跟随 Hermes 主模型（`deepseek-v4.1-flash`，token-plan 兼容端点），该 API 的失败模式及降级：
 
 | 模式 | 表现 | 降级 |
 |------|------|------|
