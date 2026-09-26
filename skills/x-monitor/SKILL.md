@@ -132,7 +132,7 @@ deliver: origin
 ## Cron 任务
 
 任务名：`x-users-monitor-AM` / `x-users-monitor-PM`
-- 调度：每天 11:30、18:00
+- 调度：每天 11:30、18:00（**AM 已按用户要求暂停，当前仅 18:00 运行**）
 - Agent 执行步骤：
   1. cd /Users/felix/.hermes/skills/felix-skills/skills/x-monitor
   2. 运行 `python3 scripts/fetch_new_tweets.py` 获取用户新推文
