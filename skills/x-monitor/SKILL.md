@@ -1,11 +1,11 @@
 ---
 name: x-monitor
-description: 监控指定 X 用户的新推文 + AI 领域每日热点话题，汇总后通过飞书发送给 Felix。
+description: 监控指定 X 用户的新推文，生成中文总结后通过飞书发送给 Felix。
 ---
 
-# X (Twitter) 用户动态监控 + AI 热点话题
+# X (Twitter) 用户动态监控
 
-监控指定 X 用户的新推文，并获取 AI 领域每日高互动热点话题，汇总后通过飞书发送给 Felix。
+监控指定 X 用户的新推文，生成中文总结后通过飞书发送给 Felix。
 
 ## 监控用户列表
 
@@ -13,44 +13,35 @@ description: 监控指定 X 用户的新推文 + AI 领域每日热点话题，�
 
 ## 依赖
 
-- **twitter**（`/Users/felix/.local/bin/twitter`）：用户监控脚本通过 `twitter user-posts <username> --max 1 --json` 获取用户最新推文
+- **twitter**（`/Users/felix/.local/bin/twitter`）：通过 `twitter user-posts <username> --max 1 --json` 获取用户最新推文
 - **opencli**（`/opt/homebrew/bin/opencli`）：备用工具（需要 Chrome Browser Bridge 扩展）
-- **twitter CLI**（`/Users/felix/.local/bin/twitter`）：AI 热点脚本通过 `twitter search --type top` 搜索 AI 相关热门推文（不依赖浏览器扩展，更稳定）
 - ⚠️ `twitter user-posts` 命令不稳定，经常超时无响应，每次运行能成功抓取的用户数量会有波动，属于已知问题
-- ⚠️ GLM-5-turbo 的 reasoning 模式（`reasoning_content`）非常慢，批量 prompt 常超时（120s+），不适合 cron 场景。`summarize_tweets.py` 的 `.env` 配置中若使用 GLM，会尝试批量 LLM 调用但快速失败降级到规则摘要（取前80字）。如需 LLM 摘要，建议换用非 reasoning 模型的 API（如 GPT-4o-mini）
-- ✅ **降级链已修复（2026-08-23）**：`summarize_tweets.py` 现按 docstring 实现「技能 .env (GLM) → ~/.hermes/config.yaml custom_providers（如 hongmacc gpt-5.4-mini）→ 规则摘要」三级降级。修复了两个 bug：① `call_llm` 的 `len(text)<300` 校验导致批量 JSON 响应永远被丢弃（现按场景传 max_len）；② 批量 JSON 解析失败无兜底（现自动提取首个 `[` 到末尾 `]` 子串重试）。GLM 配额耗尽（429，报错含"使用上限"）时自动走 hongmacc，实测稳定可用（~7s/次）。
-- ⚠️ **twitter CLI `search` 可能返回 HTTP 404（`not_found`）**：2026-08-23 起 `twitter search` 全部查询返回 404（与查询词无关，报错 `Failed to init ClientTransaction` 警告 + `{"ok":false,"error":{"code":"not_found"}}`），`fetch_ai_trending.py` 会静默输出空数组 `[]`。此时可用 opencli 临时备份（`opencli doctor` 确认 Extension connected 后）：`opencli twitter search "(AI OR LLM OR GPT OR Claude OR agent OR DeepSeek) lang:en" --product top --limit N --top-by-engagement N -f json`，注意 opencli 输出 `author` 是字符串、无 retweets/replies 指标、时间格式 `%a %b %d %H:%M:%S %z %Y`、URL 为 `https://x.com/<author>/status/<id>`。备份脚本示例：`/tmp/fetch_ai_trending_opencli.py`（本次 cron 用过，输出 schema 与 fetch_ai_trending.py 一致）。
-- ⚠️ `twitter user-posts` 认证失败时返回 `not_authenticated`，但 `fetch_new_tweets.py` 会**静默跳过**该用户（返回空数组），导致 cron 报告"暂无新推文"而非报错。这是已知缺陷，容易掩盖认证问题。
-- ⚠️ `opencli twitter search` 也可能超时，脚本已设置 60s timeout 并优雅降级
+- ⚠️ `twitter user-posts` 认证失败时返回 `not_authenticated`，但 `fetch_new_tweets.py` 会**静默跳过**该用户（返回空数组），导致 cron 报告"暂无新推文"而非报错。这是已知缺陷，容易掩盖认证问题
 - ⚠️ opencli 需要 Chrome Browser Bridge 扩展连接，未连接时所有命令返回 `BROWSER_CONNECT` 错误（exit code 69）
+
 ## 执行方式
 
 ### 步骤1：抓取推文数据
 
 ```bash
 python3 scripts/fetch_new_tweets.py
-python3 scripts/fetch_ai_trending.py
 ```
 
-- 两个脚本独立运行，互不影响
-- fetch_new_tweets.py 无新推文时输出 `NO_NEW_TWEETS` 并退出码 1
+- 无新推文时输出 `NO_NEW_TWEETS` 并退出码 1
 - 有数据时输出 JSON 到 stdout，同时写入 `/tmp/x-monitor-new-tweets.json`
-- fetch_ai_trending.py 始终输出 JSON（可能为空数组），写入 `/tmp/x-monitor-ai-trending.json`
 
 ### 步骤2：生成中文总结并格式化输出
 
 ```bash
-# 用户动态
-python3 scripts/summarize_tweets.py /tmp/x-monitor-new-tweets.json --type user --batch
-
-# AI 热点
-python3 scripts/summarize_tweets.py /tmp/x-monitor-ai-trending.json --type trending --batch
+python3 scripts/summarize_tweets.py /tmp/x-monitor-new-tweets.json --batch
 ```
 
-- 脚本自动调用 LLM（降级链：技能 .env → config.yaml custom_providers → 规则摘要）对每条推文生成中文总结
-- 优先使用批量模式（多条推文合并为一个 API 调用），失败时自动降级为逐条调用
+- 脚本自动调用 LLM（降级链：技能 .env 主模型 → 技能 .env deepseek → 规则摘要）对每条推文生成中文总结
+- 优先使用批量模式（多条推文合并为一个 API 调用），失败时自动降级为规则摘要
 - 输出格式化的飞书消息（中文总结 + 链接）
 - 同时保存带摘要的 JSON（`-summarized.json` 后缀）
+- LLM 配置只读技能目录 `.env`（`OPENAI_*` 主模型、`DEEPSEEK_*` 备用），**不读** Hermes config.yaml
+- 调用推理模型时自动带 `enable_thinking=false`（端点不支持时回退重试），避免思考内容泄漏进摘要
 
 ## 数据格式
 
@@ -89,16 +80,6 @@ JSON 数组，每条推文包含：
 🔗 <https://x.com/op7418/status/xxx>
 
 ━━━━━━━━━━━━━━━━━━
-
-🔥 AI 热点话题
-━━━━━━━━━━━━━━━━━━
-1. @author1（Author Name）— 中文内容总结
-   🔗 <https://x.com/author1/status/xxx>
-
-2. @author2（Author Name）— 中文内容总结
-   🔗 <https://x.com/author2/status/xxx>
-
-━━━━━━━━━━━━━━━━━━
 ```
 
 ### 无新推文时
@@ -106,11 +87,7 @@ JSON 数组，每条推文包含：
 ```
 🐦 X 动态监控 | 4月21日 07:00
 暂无新推文
-
-🔥 暂无 AI 热点
 ```
-
-**热点话题获取失败时**：在热点区域显示「🔥 AI 热点话题获取失败，下次重试」，不影响用户动态部分。
 
 ⚠️ URL 必须用尖括号包裹：<https://x.com/user/status/id>，避免飞书截断超链接可点击区域。
 
@@ -124,36 +101,6 @@ JSON 数组，每条推文包含：
 
 - 每个用户的最后一条推文 ID 保存在 `tmp/x-monitor-states/{username}-last-tweet.txt`
 - 每次运行时比对，相同则跳过
-
-## AI 热点话题
-
-### 执行方式
-
-```bash
-python3 scripts/fetch_ai_trending.py
-```
-
-- 使用 `twitter` CLI（`/Users/felix/.local/bin/twitter`）搜索 AI 相关热门推文，不依赖浏览器扩展
-- 搜索命令：`twitter search "<query>" --type top --lang en --max N --json`
-- 执行两次搜索：关键词搜索 `"AI OR LLM OR GPT OR Claude OR agent OR DeepSeek"`（20 条）+ `"AI agent framework"`（10 条）
-- twitter CLI 返回嵌套结构：`author` 是 dict（`screenName`/`name`），`metrics` 是 dict（`likes`/`retweets`/`views`），有 `createdAtISO` 时间字段
-- 自动排除 users.txt 中已监控用户的推文（避免重复）
-- 只保留最近 2 天内的推文（用 `createdAtISO` 字段判断）
-- 按 engagement_score（likes + retweets×2 + replies + views÷100）降序取 Top 10
-- 输出 JSON 到 stdout，同时写入 `/tmp/x-monitor-ai-trending.json`
-- timeout 60s，失败时优雅降级输出空数组
-
-### 输出格式
-
-JSON 数组，每条推文在原有字段基础上增加 `engagement_score` 字段。
-
-### 与用户监控的区别
-
-| | 用户监控 (fetch_new_tweets.py) | AI 热点 (fetch_ai_trending.py) |
-|---|---|---|
-| 数据源 | 指定用户最新推文 | AI 关键词搜索热门推文 |
-| 去重 | 基于状态文件（增量） | 每次全量获取，按热度排序 |
-| 输出 | 新推文或 NO_NEW_TWEETS | 始终输出 JSON（可能为空） |
 
 ## Cron 任务投递方式
 
@@ -174,9 +121,8 @@ deliver: origin
 - 状态文件会阻止重复推送同一条推文。
 - `lark-cli im +messages-send` 报 `validation` 错误：检查是否缺少 `--as bot` 参数。
 - **twitter CLI 返回嵌套结构**：`author` 是 dict（含 `screenName`/`name`），`metrics` 是 dict（含 `likes`/`retweets`/`views`/`bookmarks`），有 `createdAtISO` 时间字段。`parse_tweet()` 已适配此结构。如果 twitter CLI 更新了输出格式，优先检查 `parse_tweet` 函数。
-- **opencli 已弃用（AI 热点）**：fetch_ai_trending.py 已从 opencli 切换到 twitter CLI。opencli 仍作为备用工具保留，但不再用于 AI 热点获取。opencli 的 Browser Bridge 扩展经常断连（`opencli doctor` 显示 `[MISSING] Extension`），导致 AI 热点连续多天失败，这是切换的主要原因。
 - **转发推文 `retweet_from` 字段解析 bug**：`fetch_new_tweets.py` 在提取转发原作者时，URL 解析逻辑错误地取了 `status` 作为用户名（如 `https://x.com/wquguru/status/2066359502404780364` 中提取出 `status` 而非 `wquguru`）。脚本输出的 `retweet_from` 字段不可靠，cron 输出中需要手动从 `url` 字段中提取正确的转发原作者（`https://x.com/<author>/status/<id>` 中的 `<author>`）。
-- **twitter CLI 认证失效（静默失败）**：twitter CLI 依赖浏览器 cookies 认证，cookies 过期或 Keychain 权限被拒绝时，`user-posts` 和 `search` 均返回 `{"ok": false, "error": {"code": "not_authenticated"}}`。但 `fetch_new_tweets.py` 会将其静默处理为「无新推文」（输出 `NO_NEW_TWEETS`），`fetch_ai_trending.py` 输出空数组 `[]`——与真正无内容的输出完全一致，**无法区分认证失败和真的无新推文**。诊断方法：手动运行 `twitter user-posts <username> --max 1 --json`，如果看到 `not_authenticated` 错误，说明需要重新认证。修复：在浏览器中重新登录 x.com，或授权 Keychain 访问（钥匙串访问 → 搜索 "Safe Storage" → 添加终端应用）。
+- **twitter CLI 认证失效（静默失败）**：twitter CLI 依赖浏览器 cookies 认证，cookies 过期或 Keychain 权限被拒绝时，`user-posts` 返回 `{"ok": false, "error": {"code": "not_authenticated"}}`。但 `fetch_new_tweets.py` 会将其静默处理为「无新推文」（输出 `NO_NEW_TWEETS`）——与真正无内容的输出完全一致，**无法区分认证失败和真的无新推文**。诊断方法：手动运行 `twitter user-posts <username> --max 1 --json`，如果看到 `not_authenticated` 错误，说明需要重新认证。修复：在浏览器中重新登录 x.com，或授权 Keychain 访问（钥匙串访问 → 搜索 "Safe Storage" → 添加终端应用）。
 
 ## ⚠️ Cron 模式限制
 
@@ -185,13 +131,11 @@ deliver: origin
 
 ## Cron 任务
 
-任务名：`x-users-monitor`
-- 调度：每天 7:00, 11:00, 18:00
+任务名：`x-users-monitor-AM` / `x-users-monitor-PM`
+- 调度：每天 11:30、18:00
 - Agent 执行步骤：
   1. cd /Users/felix/.hermes/skills/felix-skills/skills/x-monitor
   2. 运行 `python3 scripts/fetch_new_tweets.py` 获取用户新推文
-  3. 运行 `python3 scripts/fetch_ai_trending.py` 获取 AI 热点话题（独立运行，失败不影响动态部分）
-  4. 如有新推文，运行 `python3 scripts/summarize_tweets.py /tmp/x-monitor-new-tweets.json --type user --batch` 生成中文总结
-  5. 运行 `python3 scripts/summarize_tweets.py /tmp/x-monitor-ai-trending.json --type trending --batch` 生成热点总结
-  6. 将两部分输出拼接后直接输出（系统会自动投递）
-  7. 始终推送（即使无新内容也要汇报）
+  3. 如有新推文，运行 `python3 scripts/summarize_tweets.py /tmp/x-monitor-new-tweets.json --batch` 生成中文总结
+  4. 将脚本输出直接作为最终输出（系统会自动投递）
+  5. 始终推送（即使无新内容也要汇报）

@@ -2,13 +2,13 @@
 """X 监控推文总结脚本 - 对推文 JSON 生成中文摘要并格式化输出
 
 用法：
-  python3 scripts/summarize_tweets.py <json_file> [--type user|trending] [--max 100]
+  python3 scripts/summarize_tweets.py <json_file> [--batch]
 
-读取 JSON 文件（fetch_new_tweets.py 或 fetch_ai_trending.py 的输出），
-调用 LLM 对每条推文生成中文总结，输出格式化的飞书消息。
+读取 fetch_new_tweets.py 输出的 JSON 文件，调用 LLM 对每条推文生成中文总结，
+输出格式化的飞书消息。
 
-支持从 .env 或 ~/.hermes/config.yaml 自动读取 GLM API 配置。
-降级链：GLM → hongmacc → 规则摘要（直接取原文前80字）。
+LLM 配置从技能目录 .env 读取（不依赖 Hermes config.yaml）。
+降级链：主模型（OPENAI_*）→ deepseek（DEEPSEEK_*）→ 规则摘要（取原文前80字）。
 """
 
 import json
@@ -29,39 +29,34 @@ TIME_STR = NOW.strftime("%H:%M")
 
 
 def load_llm_config():
-    """加载 LLM 配置，降级链：技能 .env（GLM）→ ~/.hermes/config.yaml custom_providers（如 hongmacc）"""
+    """加载 LLM 配置，降级链：技能 .env 主模型（OPENAI_*）→ 技能 .env deepseek（DEEPSEEK_*）"""
     configs = []
     env_path = os.path.join(SKILL_DIR, ".env")
 
-    api_key, base_url, model_name = "", "", ""
+    values = {}
     if os.path.exists(env_path):
         for line in open(env_path, encoding="utf-8"):
             line = line.strip()
-            if line.startswith("#"):
+            if not line or line.startswith("#") or "=" not in line:
                 continue
-            if line.startswith("OPENAI_API_KEY="):
-                api_key = line.split("=", 1)[1].strip()
-            elif line.startswith("OPENAI_BASE_URL="):
-                base_url = line.split("=", 1)[1].strip()
-            elif line.startswith("OPENAI_MODEL="):
-                model_name = line.split("=", 1)[1].strip()
-    if api_key and base_url and model_name:
-        configs.append({"name": f"GLM ({model_name})", "api_key": api_key, "base_url": base_url, "model": model_name})
+            k, v = line.split("=", 1)
+            values[k.strip()] = v.strip()
 
-    # 从 ~/.hermes/config.yaml 的 custom_providers 读取备用 provider（如 hongmacc gpt-5.4-mini）
-    try:
-        import yaml
-        cfg_path = os.path.expanduser("~/.hermes/config.yaml")
-        if os.path.exists(cfg_path):
-            with open(cfg_path, encoding="utf-8") as f:
-                cfg = yaml.safe_load(f) or {}
-            for p in cfg.get("custom_providers", []):
-                name = p.get("name", "")
-                if name and p.get("api_key") and p.get("base_url") and p.get("model"):
-                    if name not in [c["name"] for c in configs]:
-                        configs.append({"name": f"备用 ({name})", "api_key": p["api_key"], "base_url": p["base_url"], "model": p["model"]})
-    except Exception:
-        pass
+    # 第1优先：Hermes 主模型
+    api_key, base_url, model_name = (values.get("OPENAI_API_KEY", ""),
+                                     values.get("OPENAI_BASE_URL", ""),
+                                     values.get("OPENAI_MODEL", ""))
+    if api_key and base_url and model_name:
+        configs.append({"name": f"主模型 ({model_name})", "api_key": api_key,
+                        "base_url": base_url, "model": model_name})
+
+    # 第2优先：deepseek
+    ds_key, ds_url, ds_model = (values.get("DEEPSEEK_API_KEY", ""),
+                                values.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+                                values.get("DEEPSEEK_MODEL", "deepseek-v4-flash"))
+    if ds_key and ds_url:
+        configs.append({"name": f"deepseek ({ds_model})", "api_key": ds_key,
+                        "base_url": ds_url, "model": ds_model})
 
     return configs
 
@@ -73,17 +68,27 @@ def call_llm(config, prompt, timeout=30, max_len=300):
         url = config["base_url"].rstrip("/")
         if not url.endswith("/chat/completions"):
             url += "/chat/completions"
+        payload = {
+            "model": config["model"],
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 8192,
+            "temperature": 0.3,
+        }
+        # 推理模型（如 deepseek-v4.1-flash）需关闭思考，避免思考内容泄漏进摘要
         resp = requests.post(
             url,
             headers={"Authorization": f"Bearer {config['api_key']}", "Content-Type": "application/json"},
-            json={
-                "model": config["model"],
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 8192,
-                "temperature": 0.3,
-            },
+            json=dict(payload, enable_thinking=False),
             timeout=timeout,
         )
+        if resp.status_code != 200:
+            # 端点不支持 enable_thinking 时回退重试
+            resp = requests.post(
+                url,
+                headers={"Authorization": f"Bearer {config['api_key']}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=timeout,
+            )
         if resp.status_code == 200:
             msg = resp.json()["choices"][0]["message"]
             text = msg.get("content", "").strip() or msg.get("reasoning_content", "").strip()
@@ -235,43 +240,11 @@ def format_user_tweets(tweets):
     return "\n".join(lines)
 
 
-def format_trending_tweets(tweets):
-    """格式化 AI 热点话题"""
-    if not tweets:
-        return "🔥 暂无 AI 热点"
-
-    # 限制最多展示条数，防止 cron 输出超长
-    MAX_TWEETS = 8
-    truncated_count = max(0, len(tweets) - MAX_TWEETS)
-    tweets = tweets[:MAX_TWEETS]
-
-    lines = ["🔥 AI 热点话题", "━━━━━━━━━━━━━━━━━━"]
-
-    for i, t in enumerate(tweets, 1):
-        author = t.get("author", "")
-        author_name = t.get("author_name", "")
-        display = f"@{author}（{author_name}）" if author_name else f"@{author}"
-        summary = t.get("summary", rule_summary(t.get("text", "")))
-        # 截断过长的摘要
-        if len(summary) > 100:
-            summary = summary[:100].rstrip() + "…"
-        url = t.get("url", "")
-
-        lines.append(f"{i}. {display} — {summary}")
-        lines.append(f"   🔗 <{url}>")
-
-    if truncated_count > 0:
-        lines.append(f"   …另有 {truncated_count} 条未展示")
-
-    lines.append("━━━━━━━━━━━━━━━━━━")
-    return "\n".join(lines)
-
 
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="推文总结脚本")
     parser.add_argument("json_file", help="推文 JSON 文件路径")
-    parser.add_argument("--type", choices=["user", "trending"], default="user", help="推文类型")
     parser.add_argument("--batch", action="store_true", help="使用批量总结模式（多条合并为一个 API 调用）")
     args = parser.parse_args()
 
@@ -283,10 +256,7 @@ def main():
         tweets = json.load(f)
 
     if not tweets:
-        if args.type == "trending":
-            print(format_trending_tweets([]))
-        else:
-            print("NO_NEW_TWEETS")
+        print("NO_NEW_TWEETS")
         return
 
     # 生成总结
@@ -307,12 +277,7 @@ def main():
             t["summary"] = summarize_single(t.get("author", ""), t.get("text", ""))
 
     # 格式化输出
-    if args.type == "user":
-        output = format_user_tweets(tweets)
-    else:
-        output = format_trending_tweets(tweets)
-
-    print(output)
+    print(format_user_tweets(tweets))
 
     # 保存带摘要的 JSON
     output_file = args.json_file.replace(".json", "-summarized.json")
