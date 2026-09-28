@@ -47,9 +47,11 @@ def fetch_latest_tweet(username, timeout=30):
         author_info = t.get("author", {})
         author = author_info.get("screenName", username)
         is_retweet = t.get("isRetweet", False)
+        # 转推：CLI 返回的 id/author 均为**原作者**，URL 必须用原作者拼接（用被监控账号会 404）
         url = f"https://x.com/{author}/status/{t['id']}"
-        if is_retweet:
-            url = f"https://x.com/{username}/status/{t['id']}"
+        retweeted_by = t.get("retweetedBy") or ""
+        if isinstance(retweeted_by, dict):
+            retweeted_by = retweeted_by.get("screenName", "")
         return {
             "id": t["id"],
             "text": t.get("text", "").replace("\n", " ").replace("\r", " "),
@@ -62,6 +64,8 @@ def fetch_latest_tweet(username, timeout=30):
             "created_at": t.get("createdAtLocal", "") or t.get("createdAt", ""),
             "url": url,
             "is_retweet": is_retweet,
+            "retweet_from": author if is_retweet else "",
+            "retweeted_by": retweeted_by if is_retweet else "",
         }
     except (subprocess.TimeoutExpired, json.JSONDecodeError, KeyError):
         return None

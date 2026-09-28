@@ -202,10 +202,10 @@ def format_user_tweets(tweets):
     if not tweets:
         return None
 
-    # 限制最多展示条数，防止 cron 输出超长
-    MAX_TWEETS = 10
-    truncated_count = max(0, len(tweets) - MAX_TWEETS)
-    tweets = tweets[:MAX_TWEETS]
+    # 安全上限（默认 50 条），防止极端情况输出超长；正常应完整展示全部新推文
+    max_tweets = int(os.environ.get("XMON_MAX_TWEETS", "50"))
+    truncated_count = max(0, len(tweets) - max_tweets)
+    tweets = tweets[:max_tweets]
 
     lines = [f"🐦 X 动态监控 | {DATE_STR} {TIME_STR}", "━━━━━━━━━━━━━━━━━━", ""]
 
@@ -213,7 +213,7 @@ def format_user_tweets(tweets):
         author = t.get("author", "")
         author_name = t.get("author_name", "")
         display = f"@{author}（{author_name}）" if author_name else f"@{author}"
-        summary = t.get("summary", rule_summary(t.get("text", "")))
+        summary = t.get("summary") or rule_summary(t.get("text", ""))
         # 截断过长的摘要
         if len(summary) > 100:
             summary = summary[:100].rstrip() + "…"
@@ -221,11 +221,16 @@ def format_user_tweets(tweets):
         is_retweet = t.get("is_retweet", False)
 
         if is_retweet:
-            # 从 URL 提取转发原作者
-            m = re.match(r'https://x\.com/([^/]+)/status/', url)
-            retweet_from = m.group(1) if m else ""
-            lines.append(f"🔄 转发自 @{retweet_from}")
-            lines.append(f"{display}")
+            # 优先用脚本给出的原作者，兜底从 URL 提取
+            retweet_from = t.get("retweet_from") or ""
+            if not retweet_from:
+                m = re.match(r'https://x\.com/([^/]+)/status/', url)
+                retweet_from = m.group(1) if m else author
+            retweeted_by = t.get("retweeted_by") or ""
+            header = f"🔄 转发自 @{retweet_from}"
+            if retweeted_by:
+                header += f"（由 @{retweeted_by} 转发）"
+            lines.append(header)
         else:
             lines.append(display)
         lines.append(summary)

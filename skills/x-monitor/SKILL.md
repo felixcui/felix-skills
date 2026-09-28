@@ -94,7 +94,7 @@ JSON 数组，每条推文包含：
 规则：
 - 每条推文只输出中文总结 + 链接，**不要输出原文正文**
 - 中文总结 1-2 句话，概括核心内容
-- 转发推文标注「🔄 转发自 @原作者」后接总结
+- 转发推文标注「🔄 转发自 @原作者（由 @转发者 转发）」，链接指向原作者
 - **无新推文时也要汇报**，不要使用 [SILENT]
 
 ## 状态管理
@@ -121,7 +121,8 @@ deliver: origin
 - 状态文件会阻止重复推送同一条推文。
 - `lark-cli im +messages-send` 报 `validation` 错误：检查是否缺少 `--as bot` 参数。
 - **twitter CLI 返回嵌套结构**：`author` 是 dict（含 `screenName`/`name`），`metrics` 是 dict（含 `likes`/`retweets`/`views`/`bookmarks`），有 `createdAtISO` 时间字段。`parse_tweet()` 已适配此结构。如果 twitter CLI 更新了输出格式，优先检查 `parse_tweet` 函数。
-- **转发推文 `retweet_from` 字段解析 bug**：`fetch_new_tweets.py` 在提取转发原作者时，URL 解析逻辑错误地取了 `status` 作为用户名（如 `https://x.com/wquguru/status/2066359502404780364` 中提取出 `status` 而非 `wquguru`）。脚本输出的 `retweet_from` 字段不可靠，cron 输出中需要手动从 `url` 字段中提取正确的转发原作者（`https://x.com/<author>/status/<id>` 中的 `<author>`）。
+- **转推（retweet）处理**：`twitter user-posts` 返回的 `id` 和 `author` 都是**原作者**的信息，被监控账号在 `retweetedBy` 字段。因此 `fetch_new_tweets.py` 用原作者拼 URL（`https://x.com/<原作者>/status/<id>`），并输出 `retweet_from`（原作者）与 `retweeted_by`（转发者）两个字段。若 URL 用被监控账号拼接会 404。
+- **输出完整展示**：`format_user_tweets` 默认完整展示全部新推文，仅保留 `XMON_MAX_TWEETS`（默认 50）作为极端情况的安全上限；不要把它改回硬编码的 10 条截断。
 - **twitter CLI 认证失效（静默失败）**：twitter CLI 依赖浏览器 cookies 认证，cookies 过期或 Keychain 权限被拒绝时，`user-posts` 返回 `{"ok": false, "error": {"code": "not_authenticated"}}`。但 `fetch_new_tweets.py` 会将其静默处理为「无新推文」（输出 `NO_NEW_TWEETS`）——与真正无内容的输出完全一致，**无法区分认证失败和真的无新推文**。诊断方法：手动运行 `twitter user-posts <username> --max 1 --json`，如果看到 `not_authenticated` 错误，说明需要重新认证。修复：在浏览器中重新登录 x.com，或授权 Keychain 访问（钥匙串访问 → 搜索 "Safe Storage" → 添加终端应用）。
 
 ## ⚠️ Cron 模式限制
