@@ -534,6 +534,60 @@ def _load_hermes_config():
                 return yaml.safe_load(f)
     return {}
 
+# 摘要超长时允许的最大超出字数（宁可超出几个字，也不从句子中间劈开）
+SUMMARY_TRUNCATION_TOLERANCE = 40
+
+
+def _normalize_ending(text):
+    """统一摘要结尾标点为句号。"""
+    text = text.strip()
+    if not text:
+        return text
+    if text[-1] in '！？!?':
+        text = text[:-1] + '。'
+    elif not text.endswith('。'):
+        text = text.rstrip('.') + '。'
+    return text
+
+
+def _truncate_to_sentence(text, max_length, tolerance=SUMMARY_TRUNCATION_TOLERANCE):
+    """超长摘要按整句截断。
+
+    优先在「max_length + tolerance」字以内取最后一个句末标点并整句保留——
+    宁可超出几个字，也不把句子从中间劈开（旧实现按字符硬切，会产出
+    「…能否稳定产。」这类残缺结尾）。窗口内找不到句末标点时依次回退：
+    上限以内的句末标点 → 窗口内的分句标点（补句号）→ 硬切补句号。
+    """
+    if not text:
+        return text
+    text = text.strip()
+    if len(text) <= max_length:
+        return text
+
+    sentence_ends = '。！？!?'
+    clause_ends = '；;，,、'
+    window = text[:max_length + tolerance]
+
+    # 1) 上限 + tolerance 内最后一个句末标点（允许略微超长，保证整句完整）
+    idx = max(window.rfind(ch) for ch in sentence_ends)
+    if idx > 0:
+        return _normalize_ending(window[:idx + 1])
+
+    # 2) 窗口内没有句末标点：退到上限以内的最后一个句末标点
+    head = text[:max_length]
+    idx = max(head.rfind(ch) for ch in sentence_ends)
+    if idx > 0:
+        return _normalize_ending(head[:idx + 1])
+
+    # 3) 再退到窗口内的最后一个分句标点，去掉该标点后补句号
+    idx = max(window.rfind(ch) for ch in clause_ends)
+    if idx > 0:
+        return window[:idx].rstrip() + '。'
+
+    # 4) 兜底：无任何标点可用，硬切后补句号
+    return head.rstrip('。！？!?；;，,、 ') + '。'
+
+
 def _extract_summary_from_thinking(raw_text, max_length):
     """尝试从 LLM 输出的分析/思考过程中提取有效摘要段落。
     
@@ -591,15 +645,7 @@ def _extract_summary_from_thinking(raw_text, max_length):
     
     narrative_text = ' '.join(narrative_lines).strip()
     if len(narrative_text) > 30:
-        if len(narrative_text) > max_length:
-            truncated = narrative_text[:max_length]
-            last_period = truncated.rfind('。')
-            if last_period > max_length * 0.6:
-                narrative_text = truncated[:last_period+1]
-            else:
-                narrative_text = truncated.rstrip() + '。'
-        if not narrative_text.endswith('。'):
-            narrative_text = narrative_text.rstrip('.') + '。'
+        narrative_text = _normalize_ending(_truncate_to_sentence(narrative_text, max_length))
         return narrative_text
     
     # 策略3：提取最后一段较长的连续文本
@@ -607,9 +653,7 @@ def _extract_summary_from_thinking(raw_text, max_length):
     if paragraphs:
         last_para = re.sub(r'\*{2,}', '', paragraphs[-1])
         if len(last_para) > 30:
-            if not last_para.endswith('。'):
-                last_para = last_para.rstrip('.') + '。'
-            return last_para
+            return _normalize_ending(last_para)
     
     return None
 
@@ -686,16 +730,7 @@ def _call_llm_for_summary(api_key, base_url, model_name, prompt, max_length):
             return None
 
         if len(summary) > 50:
-            if len(summary) > max_length:
-                truncated = summary[:max_length]
-                last_period = truncated.rfind('。')
-                if last_period > max_length * 0.6:
-                    summary = truncated[:last_period+1]
-                else:
-                    summary = truncated.rstrip() + '。'
-            if not summary.endswith('。'):
-                summary = summary.rstrip('.') + '。'
-            return summary
+            return _normalize_ending(_truncate_to_sentence(summary, max_length))
     return None
 
 
@@ -939,17 +974,8 @@ def generate_summary_rule_based(content, title="", max_length=200):
     summary = re.sub(r'。+', '。', summary)
     summary = summary.strip('。')
     
-    if len(summary) > max_length:
-        truncated = summary[:max_length]
-        last_period = truncated.rfind('。')
-        if last_period > max_length * 0.5:
-            summary = truncated[:last_period+1]
-        else:
-            summary = truncated.rstrip() + '。'
-    
-    if not summary.endswith('。'):
-        summary = summary.rstrip('.') + '。'
-    
+    summary = _normalize_ending(_truncate_to_sentence(summary, max_length))
+
     return summary
 
 

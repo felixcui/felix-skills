@@ -745,6 +745,11 @@ news-collect/
 
 ## 更新日志
 
+### v2.5 (2026-09-30)
+- 🔧 **修复：摘要超长时句中残缺**。旧逻辑按字符硬切、且最后一个句号位置不足上限的 50~60% 时直接截断补句号，会产出「…能否稳定产。」这类残缺结尾（连续两天复现）。新增 `_truncate_to_sentence(text, max_length, tolerance=SUMMARY_TRUNCATION_TOLERANCE)`：在「上限 + 40 字」内取最后一个句末标点并**整句保留**——宁可超出几个字，也不从句子中间劈开；窗口内无句末标点时依次回退到「上限以内的句末标点」→「窗口内的分句标点（补句号）」→「硬切补句号」。三处截断点（LLM 摘要、思考泄漏提取、规则摘要）统一走该函数。
+- 🔧 **修复：结尾标点拼接错误**。摘要以「！」「？」结尾时旧逻辑会拼成「！。」，现统一由 `_normalize_ending()` 归一化为句号。
+- ⚠️ 摘要长度上界由 `max_length` 变为 `max_length + 40`（默认 240 字），摘要字段下游无硬长度限制。
+
 ### v2.4 (2026-08-23)
 - 🔧 变更：摘要降级链第2优先从 hongmacc (gpt-5.4-mini) 改为 deepseek-v4-flash — 配置优先从 `news-collect/.env` 读取 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL`（https://api.deepseek.com），回退到 Hermes 环境配置。触发条件不变（GLM 超时/报错/返回无效内容时降级）
 
