@@ -360,6 +360,10 @@ def classify_by_keywords(news_list):
     non_ai_keywords = [
         "招聘", "诚聘", "招贤", "简历", "招人",
         "内推", "社招", "校招", "猎头",
+        # 活动/调研/招商类（2026-10-12 补充：这类内容与 AI 技术无关，
+        # 原先会掉进兜底分支被误判为「跨分类」，实际应直接过滤）
+        "问卷", "调研收集", "助力举办", "外国企业", "投资推介",
+        "招商", "路演", "报名参加", "开幕式", "交流会",
     ]
 
     # 加权规则定义：每个元组是 (分类, [(关键词, 权重), ...])
@@ -391,6 +395,19 @@ def classify_by_keywords(news_list):
             ("训练方法", 8), ("评测", 8), ("MoE", 8), ("长上下文", 7),
             ("RLHF", 8), ("GRPO", 8), ("DPO", 8), ("世界模型", 8),
             ("技术路线", 7), ("持续学习", 7),
+            # 厂商模型名（2026-10-12 补充：原先缺这些，导致「DeepSeek V4 震撼亮相」
+            # 「GPT-5.5 来了」这类重磅新闻命不中任何关键词，被兜底分支当成「其他」丢弃）
+            # 权重设为 8（低于 Claude Code/Cursor 等产品线的 9-10）：
+            # 厂商名常与主题词共现（"Claude Code 架构解析"应归 AI软件工程而非模型技术），
+            # 权重过高会盖过主题词，导致分类偏移。
+            ("DeepSeek", 8), ("GPT", 8), ("Claude", 8), ("Gemini", 8),
+            ("Qwen", 8), ("通义", 8), ("文心", 8), ("ERNIE", 8),
+            ("Llama", 8), ("Mistral", 8), ("Grok", 8), ("Sonnet", 8),
+            ("Opus", 8), ("豆包", 8), ("Kimi", 8), ("MiniMax", 8),
+            ("智谱", 7), ("GLM", 7), ("阶跃", 7), ("LLaMA", 8),
+            ("Sora", 7), ("Veo", 7), ("Midjourney", 7),
+            # 版本号与上下文规格（模型发布类新闻的典型特征）
+            ("百万上下文", 8), ("预览版", 7), ("正式版", 7), ("旗舰", 7),
         ]),
         # === Agent基建 ===
         ("Agent基建", [
@@ -490,28 +507,37 @@ def classify_by_keywords(news_list):
             matched = True
 
         if not matched:
-            # 兜底启发式
-            if any(x in title for x in ["编码", "编程", "代码", "开源", "开发框架", "软件工程"]):
+            # 兜底启发式（2026-10-12 扩充：原先漏掉大量真实AI内容，
+            # 导致重磅新闻掉进 else 被当作「其他」丢弃）
+            if any(x in title for x in ["编码", "编程", "代码", "开源", "开发框架", "软件工程", "Skill", "skill", "插件", "IDE", "仓库", "GitHub"]):
                 categories["AI软件工程"].append(i)
-            elif any(x in title for x in ["视频", "图像", "绘画", "写作", "创作", "生成", "短剧", "漫剧"]):
+            elif any(x in title for x in ["视频", "图像", "绘画", "写作", "创作", "生成", "短剧", "漫剧", "音乐", "配音", "设计工具"]):
                 categories["内容创作"].append(i)
-            elif any(x in title for x in ["知识库", "办公", "笔记", "PPT", "搜索"]):
+            elif any(x in title for x in ["知识库", "办公", "笔记", "PPT", "搜索", "效率", "助手", "工作流"]):
                 categories["个人生产力"].append(i)
-            elif any(x in title for x in ["芯片", "GPU", "算力", "服务器", "数据中心"]):
+            elif any(x in title for x in ["芯片", "GPU", "算力", "服务器", "数据中心", "英伟达", "TPU", "H100", "H200"]):
                 categories["AI 算力"].append(i)
-            elif any(x in title for x in ["模型", "算法", "大模型", "AI", "评测", "论文"]):
+            elif any(x in title for x in ["模型", "算法", "大模型", "评测", "论文", "上下文", "参数", "token", "Token"]):
                 categories["模型技术"].append(i)
-            elif any(x in title for x in ["Agent", "智能体", "MCP", "记忆", "安全治理"]):
+            elif any(x in title for x in ["Agent", "agent", "智能体", "MCP", "记忆", "安全治理", "多智能体", "工具调用"]):
                 categories["Agent基建"].append(i)
-            elif any(x in title for x in ["融资", "投资", "收购", "上市"]):
+            elif any(x in title for x in ["融资", "投资", "收购", "上市", "估值", "IPO"]):
                 categories["其他AI相关"].append(i)
-            elif any(x in title for x in ["手机", "眼镜", "耳机", "终端", "机器人", "汽车"]):
+            elif any(x in title for x in ["手机", "眼镜", "耳机", "终端", "机器人", "汽车", "可穿戴", "具身"]):
                 categories["智能终端"].append(i)
-            elif any(x in title for x in ["教育", "医疗", "金融", "政务", "制造", "科学", "法律"]):
+            elif any(x in title for x in ["教育", "医疗", "金融", "政务", "制造", "科学", "法律", "能源", "交通"]):
                 categories["行业应用"].append(i)
-            elif any(x in title for x in ["融资", "投资", "收购", "上市", "观点", "趋势", "思考", "预测", "深度", "访谈", "战略", "动态", "发布", "发布会"]):
+            elif any(x in title for x in ["观点", "趋势", "思考", "预测", "访谈", "战略", "动态", "发布", "发布会", "报告", "白皮书"]):
+                categories["其他AI相关"].append(i)
+            elif "AI" in title or "人工智能" in title:
+                # 兜底：含 AI/人工智能 字样但未命中上面任何分类 → 归入「其他AI相关」。
+                # **必须放在所有具体分支之后**，否则会截胡 Agent/终端/行业应用等更精确的判断。
+                # （曾尝试用「开发者/用户/产品」等词做中间层，但这些词太泛 ——
+                #  "开发者"会命中"纯Python 教程"、"用户"会命中"用户数增长"，
+                #  都会造成非AI 内容被误纳入，故取消中间层，由本分支统一兜底。）
                 categories["其他AI相关"].append(i)
             else:
+                # 未命中任何 AI 特征 → 判定为非 AI 内容，会被过滤
                 categories["其他"].append(i)
             classified.add(i)
 
