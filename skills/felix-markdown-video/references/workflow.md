@@ -19,17 +19,20 @@ python3 -m venv "$SKILL_DIR/.venv"
 ```bash
 python3 "$SKILL_DIR/scripts/pipeline.py" preflight
 python3 "$SKILL_DIR/scripts/pipeline.py" init /absolute/path/articles/article.md
-# 读取 init 返回的 output，向该目录写入 plan.json
-python3 "$SKILL_DIR/scripts/pipeline.py" build /absolute/path/video/article
+# init 返回版本目录（首次 .../video/article/v001，重跑递增 v002…）；后续命令都传这个版本目录
+# 向该版本目录写入 plan.json
+python3 "$SKILL_DIR/scripts/pipeline.py" build /absolute/path/video/article/v001
 # 按实际输出时长修订；重跑请 init 分配新版本，不覆盖已生成内容
-cd /absolute/path/video/article/remotion
+cd /absolute/path/video/article/v001/remotion
 npm ci
 npm run studio -- --no-open
-python3 "$SKILL_DIR/scripts/pipeline.py" render /absolute/path/video/article
-python3 "$SKILL_DIR/scripts/pipeline.py" verify /absolute/path/video/article
+python3 "$SKILL_DIR/scripts/pipeline.py" render /absolute/path/video/article/v001
+python3 "$SKILL_DIR/scripts/pipeline.py" verify /absolute/path/video/article/v001
 ```
 
 可用 `render --browser /absolute/path/to/chrome` 指定已有 Chromium，避免自动下载。渲染命令固定 H.264、AAC、yuv420p；默认不覆盖。脚本的 `verify` 不会把状态标记 complete，实际图像/音频检查仍由执行者完成。
+
+build/render/verify 始终传 init 返回的版本目录（`/absolute/path/video/article/v001`），脚本在该版本目录内部管理布局：`build` 与 `render` 把最终交付物（`video.mp4`、`cover.png`、`voiceover.md`、`storyboard.md`、`publish-copy.md`、`narration.wav`、`subtitles.srt`）写入版本目录下的 `output/` 子目录；`remotion/` 工程、`speech-segments/` 及 `plan.json`/`captions.json`/`voice-config.json`/`word-boundaries.json`/`status.json`/`validation.json` 留在版本目录根部作为可重渲染源与追溯数据。父容器目录（`/absolute/path/video/article`）只容纳 `v001/`、`v002/`… 版本子目录，根部不散落任何产物。`narration.wav` 另复制一份到 `remotion/public/` 供渲染引用。手动 `npm run render`/`npm run cover` 也会输出到 `../output/`。
 
 ## plan.json
 

@@ -56,10 +56,9 @@ def init(article):
     article = Path(article).expanduser().resolve(strict=True)
     require(article.is_file() and article.suffix.lower() in ['.md', '.markdown'], '需要 Markdown 文件')
     base = article.parent.parent / 'video' / article.stem
-    base.parent.mkdir(parents=True, exist_ok=True)
-    out = base
+    base.mkdir(parents=True, exist_ok=True)
     for i in range(1, 10000):
-        out = base if i == 1 else base / f'v{i:03}'
+        out = base / f'v{i:03}'
         try:
             out.mkdir()
             break
@@ -115,11 +114,13 @@ def build(out, audio_dir=None):
     p = read_json(out/'plan.json')
     validate_plan(p)
     article = Path(read_json(out/'status.json')['article'])
+    deliver = out/'output'
+    deliver.mkdir(exist_ok=True)
     flat = [t for s in p['scenes'] for t in s['segments']]
-    (out/'voiceover.md').write_text('# '+p['title']+'\n\n'+'\n\n'.join(t.replace('\n','') for t in flat)+'\n', encoding='utf-8')
+    (deliver/'voiceover.md').write_text('# '+p['title']+'\n\n'+'\n\n'.join(t.replace('\n','') for t in flat)+'\n', encoding='utf-8')
     pub = p['publish']
-    (out/'publish-copy.md').write_text('# '+pub['title']+'\n\n'+pub['body']+'\n\n'+' '.join('#'+t.lstrip('#') for t in pub['tags'])+'\n', encoding='utf-8')
-    (out/'storyboard.md').write_text('# 分镜（待配音生成时间轴）\n\n'+'\n\n'.join(f"## {s['heading']}\n{s['visual']}\n依据：{s['source']}\n转场：{s['transition']}\n" for s in p['scenes']),encoding='utf-8')
+    (deliver/'publish-copy.md').write_text('# '+pub['title']+'\n\n'+pub['body']+'\n\n'+' '.join('#'+t.lstrip('#') for t in pub['tags'])+'\n', encoding='utf-8')
+    (deliver/'storyboard.md').write_text('# 分镜（待配音生成时间轴）\n\n'+'\n\n'.join(f"## {s['heading']}\n{s['visual']}\n依据：{s['source']}\n转场：{s['transition']}\n" for s in p['scenes']),encoding='utf-8')
     project = out/'remotion'
     shutil.copytree(ROOT/'assets/remotion', project)
     public = project/'public'
@@ -171,7 +172,7 @@ def build(out, audio_dir=None):
         captions.append({'text':wrap(text),'startMs':samples/48,'endMs':(samples+n)/48,'timestampMs':None,'confidence':None})
         samples += n
         chunks.append(raw)
-    narration = out/'narration.wav'
+    narration = deliver/'narration.wav'
     with wave.open(str(narration),'wb') as f:
         f.setnchannels(1); f.setsampwidth(2); f.setframerate(48000)
         for raw in chunks:
@@ -180,7 +181,7 @@ def build(out, audio_dir=None):
     write_json(out/'captions.json',captions)
     if all_words:
         write_json(out/'word-boundaries.json',all_words)
-    (out/'subtitles.srt').write_text('\n\n'.join(f"{i+1}\n{stamp(c['startMs'])} --> {stamp(c['endMs'])}\n{c['text']}" for i,c in enumerate(captions))+'\n',encoding='utf-8')
+    (deliver/'subtitles.srt').write_text('\n\n'.join(f"{i+1}\n{stamp(c['startMs'])} --> {stamp(c['endMs'])}\n{c['text']}" for i,c in enumerate(captions))+'\n',encoding='utf-8')
     scenes, cursor, rows = [], 0, ['# 分镜与时间轴\n']
     for i, s in enumerate(p['scenes']):
         start = captions[cursor]['startMs']
@@ -195,7 +196,7 @@ def build(out, audio_dir=None):
             shutil.copy2(src,public/image)
         scenes.append({**s,'image':image,'startFrame':math.ceil(start*30/1000),'endFrame':math.ceil(end*30/1000)})
         rows.append(f"## {i+1}. {s['heading']}（{start/1000:.3f}—{end/1000:.3f}s）\n\n口播：{''.join(s['segments'])}\n\n画面：{s['visual']}\n\n屏幕文字：{' / '.join(s['points'])}\n\n依据/素材：{s['source']} / {s.get('image') or '原创文字与图示'}\n\n转场：{s['transition']}\n")
-    (out/'storyboard.md').write_text('\n'.join(rows),encoding='utf-8')
+    (deliver/'storyboard.md').write_text('\n'.join(rows),encoding='utf-8')
     duration = samples/48000
     write_json(project/'src/data.json',{**p,'scenes':scenes,'captions':captions,'durationInFrames':math.ceil(duration*30)})
     status(out,'prepared',duration=duration)
@@ -206,13 +207,15 @@ def build(out, audio_dir=None):
 def render(out, browser):
     d = read_json(out/'remotion/src/data.json')
     require(55 <= d['durationInFrames']/30 <= 65, '时长未达标，先改稿')
-    require((out/'narration.wav').is_file(), '缺少真实配音')
+    deliver = out/'output'
+    deliver.mkdir(exist_ok=True)
+    require((deliver/'narration.wav').is_file(), '缺少真实配音')
     project = out/'remotion'
     cli = project/'node_modules/.bin/remotion'
     require(cli.exists(), '请在生成的 remotion 目录安装固定版本依赖')
-    require(not (out/'video.mp4').exists() and not (out/'cover.png').exists(), '已有渲染产物，请使用新版本目录')
+    require(not (deliver/'video.mp4').exists() and not (deliver/'cover.png').exists(), '已有渲染产物，请使用新版本目录')
     extra = ['--browser-executable',browser] if browser else []
-    for args in [ ['render','src/index.tsx','Video',str(out/'video.mp4'),'--codec=h264','--audio-codec=aac','--pixel-format=yuv420p','--concurrency=2'], ['still','src/index.tsx','Cover',str(out/'cover.png')] ]:
+    for args in [ ['render','src/index.tsx','Video',str(deliver/'video.mp4'),'--codec=h264','--audio-codec=aac','--pixel-format=yuv420p','--concurrency=2'], ['still','src/index.tsx','Cover',str(deliver/'cover.png')] ]:
         proc = subprocess.run([str(cli),*args,'--overwrite=false',*extra],cwd=project)
         require(proc.returncode == 0, 'Remotion 渲染失败，检查日志；已保留候选文件')
     status(out,'needs_review',reason='待技术校验、画面检查和声音试听')
@@ -223,9 +226,12 @@ def probe(path):
 
 
 def verify(out):
-    for name in ['video.mp4','voiceover.md','storyboard.md','cover.png','publish-copy.md','narration.wav','subtitles.srt','remotion/src/data.json','voice-config.json']:
+    deliver = out/'output'
+    for name in ['video.mp4','voiceover.md','storyboard.md','cover.png','publish-copy.md','narration.wav','subtitles.srt']:
+        require((deliver/name).is_file() and (deliver/name).stat().st_size > 0, f'缺少产物 output/{name}')
+    for name in ['remotion/src/data.json','voice-config.json']:
         require((out/name).is_file() and (out/name).stat().st_size > 0, f'缺少产物 {name}')
-    info = probe(out/'video.mp4')
+    info = probe(deliver/'video.mp4')
     v = next(x for x in info['streams'] if x['codec_type']=='video')
     a = next(x for x in info['streams'] if x['codec_type']=='audio')
     seconds = float(info['format']['duration'])
@@ -233,18 +239,18 @@ def verify(out):
     n,d = map(int,v['avg_frame_rate'].split('/'))
     require(n/d == 30 and 55 <= seconds <= 65, '帧率或时长错误')
     require(a['codec_name'] == 'aac','音轨须为 AAC')
-    cover = probe(out/'cover.png')['streams'][0]
+    cover = probe(deliver/'cover.png')['streams'][0]
     require((cover['width'],cover['height']) == (1080,1920),'封面尺寸错误')
     captions = read_json(out/'captions.json')
-    with wave.open(str(out/'narration.wav'),'rb') as f:
+    with wave.open(str(deliver/'narration.wav'),'rb') as f:
         audio_seconds = f.getnframes()/f.getframerate()
     require(abs(audio_seconds-seconds) < 0.15,'成片与配音时长不同')
     require(abs(captions[-1]['endMs']/1000-audio_seconds) < .001,'字幕时间轴与配音不一致')
     for i,c in enumerate(captions):
         require(c['startMs'] < c['endMs'] and (i==0 or abs(c['startMs']-captions[i-1]['endMs']) < .001),'字幕时间轴重叠/间断')
         require(len(c['text'].splitlines()) <= 2 and all(len(x)<=16 for x in c['text'].splitlines()),'字幕超过两行')
-    run(['ffmpeg','-nostdin','-v','error','-i',out/'video.mp4','-f','null','-'])
-    analysis = run(['ffmpeg','-nostdin','-hide_banner','-i',out/'video.mp4','-af','volumedetect','-vn','-f','null','-']).stderr
+    run(['ffmpeg','-nostdin','-v','error','-i',deliver/'video.mp4','-f','null','-'])
+    analysis = run(['ffmpeg','-nostdin','-hide_banner','-i',deliver/'video.mp4','-af','volumedetect','-vn','-f','null','-']).stderr
     match = re.search(r'mean_volume: ([-\w.]+) dB',analysis)
     require(match and float(match.group(1)) > -60,'成片音轨静音或音量过低')
     report = {'technical_checks':'passed','duration':seconds,'resolution':[1080,1920],'fps':30,'pixel_format':v['pix_fmt'],'audio_mean_db':float(match.group(1)),'visual_review':'pending','listening_review':'pending'}

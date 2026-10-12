@@ -34,10 +34,10 @@ class Behavior(unittest.TestCase):
 
     def test_sibling_path_and_versions_preserve_source(self):
         first=self.allocate()
-        self.assertEqual(first,self.root/'video'/self.article.stem)
+        self.assertEqual(first,self.root/'video'/self.article.stem/'v001')
         (first/'video.mp4').write_bytes(b'existing')
         second=self.allocate()
-        self.assertEqual(second,first/'v002')
+        self.assertEqual(second,self.root/'video'/self.article.stem/'v002')
         self.assertEqual((first/'video.mp4').read_bytes(),b'existing')
         self.assertEqual(self.article.read_text(),'原文不应更改')
 
@@ -60,9 +60,9 @@ class Behavior(unittest.TestCase):
         pipeline.write_json(out/'plan.json',plan())
         with self.assertRaisesRegex(ValueError,'缺少真实语音'):
             pipeline.build(out,self.root/'missing')
-        self.assertTrue((out/'voiceover.md').exists())
-        self.assertTrue((out/'publish-copy.md').exists())
-        self.assertFalse((out/'narration.wav').exists())
+        self.assertTrue((out/'output'/'voiceover.md').exists())
+        self.assertTrue((out/'output'/'publish-copy.md').exists())
+        self.assertFalse((out/'output'/'narration.wav').exists())
 
     def test_silence_rejected_without_fake_narration(self):
         out=self.allocate()
@@ -73,7 +73,7 @@ class Behavior(unittest.TestCase):
             f.writeframes(b'\0\0'*48000)
         with self.assertRaisesRegex(ValueError,'静音'):
             pipeline.build(out,audio)
-        self.assertFalse((out/'narration.wav').exists())
+        self.assertFalse((out/'output'/'narration.wav').exists())
 
 
 if __name__=='__main__': unittest.main()
