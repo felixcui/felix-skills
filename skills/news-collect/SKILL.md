@@ -265,8 +265,10 @@ FEISHU_FIELDS = ["title", "link", "description", "source", "category", "updateti
 | link | 文章 URL |
 | description | 摘要（LLM 生成） |
 | `source` | 公众号文章填公众号名称；其他网站填域名；Twitter 填 `@screenName`；飞书文档填"飞书文档" |
-| `category` | 自动分类：AI算力/模型技术/Agent基建/AI软件工程/内容创作/个人生产力/行业应用/智能终端/行业相关/其他 |
+| `category` | 自动分类（**飞书 AI 字段，见下方警告**）：AI算力/模型技术/Agent基建/AI软件工程/内容创作/个人生产力/行业应用/智能终端/行业相关/其他 |
 | updatetime | 当前时间 |
+
+> ⚠️ **`category` 与 `tool` 是飞书 AI 字段**（字段元数据带 `__has_field_extension: builtin_llm_completion`）：值由飞书自己的模型重新分类，**脚本写进去的分类会被覆盖**。所以脚本日志 / 结果 JSON 里的「🏷️ 分类: X」与表格实际存的分类可能不一致（实测同一记录脚本算 `模型技术`、表格存 `Agent基建`）。**汇报给用户时一律用回读值**，不要引用脚本日志；要确认某列是不是 AI 字段：`lark-cli base +field-list --base-token <token> --table-id <table> --as user`，看 `__has_field_extension`。
 
 ### IMA 知识库配置
 
@@ -310,6 +312,14 @@ IMA_API_BASE = "https://ima.qq.com"
 3. **创建 Markdown**
 4. **推送飞书**
 5. **添加 IMA**（公众号 / 飞书文档 / 通用 URL；X/Twitter 自动跳过）
+6. **回读验证**（每次都要做，别只信脚本的「✅ 推送成功」）：
+
+```bash
+lark-cli base +record-search --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" \
+  --table-id "tblXp6DHjQPomXbv" --keyword "<完整标题>" --search-field title --as user
+```
+
+   确认 `count=1`（无重复记录），并用回读到的 category / source / updatetime 汇报。**关键词是分词模糊匹配**：拆成短词（如「Agent 评测」）会命中一堆无关记录，必须用**标题原文连空格一起**才是唯一命中；少一个空格就查不到（`为什么我们需要Agent评测` → count=0），别据此判定记录没建成。
 
 > ⚠️ Wiki 同步已从收集流程中移除，改为每日例行维护任务（21:00）统一批量同步。
 
@@ -439,6 +449,8 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 ### 飞书 Wiki 链接抓取不完整
 
 `collect_v2.py` 对飞书 Wiki 链接（`my.feishu.cn/wiki/`、`waytoagi.feishu.cn/wiki/` 或 `bytedance.larkoffice.com/wiki/`）可能抓取不完整（需要登录态），表现为文件只有十几行、标题为"未知标题"。
+
+**先核对文件规模再判断**：抓完 `wc -l -c <raw文件>` —— 正常文章 200+ 行 / 20KB 以上，只有十几行才是残缺。waytoagi 等知识库 wiki 链接多数能直接抓全，别预设失败去走手工补建流程。
 
 **解决流程**：
 1. 用 `lark-cli docs +fetch --doc "<token或URL>" --format json --limit 10000` 获取完整内容
