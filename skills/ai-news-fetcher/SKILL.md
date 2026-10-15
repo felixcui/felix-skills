@@ -1,361 +1,68 @@
 ---
 name: ai-news-fetcher
-description: 获取 AI 领域最新资讯并进行智能分类。从微信公众号 RSS 源获取 AI 相关文章，使用关键词规则自动分类为「AI编程与开发」「AI模型与技术」「AI内容创作」「AI产品与应用」「AI行业动态」「观点与趋势」等类别，支持发布到微信公众号。使用场景：每日 AI 资讯汇总、AI 新闻监控、自动资讯推送。
+description: 获取微信公众号 RSS 中的 AI 资讯并生成每日分类日报，可选保存 Markdown、写入 DevMaster、创建微信公众号草稿或发布。用户需要每日 AI 资讯汇总、新闻监控或发布日报时使用。
 ---
 
 # AI 资讯获取器
 
-从微信公众号 RSS 源获取最新的 AI 资讯，使用加权关键词规则进行智能分类，支持发布到微信公众号。
+根据用户需要选择获取、创建草稿或发布流程。分类、热点归纳、过滤和 Markdown 排版由脚本实现；不要在本文件重复维护类别清单或算法细节。
 
-## 功能特点
+## 常用操作
 
-- **自动获取**：从配置的 RSS API 获取最新的 AI 资讯
-- **智能分类**：使用加权关键词规则自动将资讯分类到不同类别
-- **自动入库**：分类完成后自动批量推送到 devmaster.cn 数据库（`DEVELMASTER_API_KEY` 配置后生效）
-- **分类类别**：
-  - AI 算力（芯片、GPU、数据中心、训练与推理成本等）
-  - 模型技术（新模型、多模态、训练方法、开源模型、评测等）
-  - Agent基建（MCP、技能、Hook、记忆、多智能体、安全等）
-  - AI软件工程（Coding Agent、IDE、代码生成、DevOps等）
-  - 内容创作（AI视频、AI绘画、AI音乐、短剧、漫剧等）
-  - 个人生产力（知识库、办公、PPT、搜索、效率工具等）
-  - 行业应用（医疗、金融、教育、政务、制造、法律等）
-  - 智能终端（AI手机、AI眼镜、机器人、汽车、智能家居等）
-  - 其他AI相关（公司动态、融资并购、产品战略、观点趋势、深度分析等）
-  - 其他（跨分类或不确定归属的 AI 相关内容）
-- **过滤机制**：
-  - 自动过滤指定公众号的内容
-  - 仅过滤明显非AI内容（招聘贴等），其他内容一律保留
-- **分类缓存**：同一天内复用分类结果，避免重复请求
-- **公众号发布**：支持创建草稿和发布到微信公众号（使用 baoyu-markdown-to-html 转换）
-
-## 目录结构（实际路径）
-
-```
-ai-news-fetcher/                                        # skill 根目录
-├── SKILL.md
-├── .env                                                 # 环境变量（需从 .archive 复制）
-├── scripts/
-│   ├── fetch_ai_news.py                # 资讯获取与智能分类（核心脚本）
-│   ├── publish_to_wechat.py            # 微信公众号发布（统一发布器）
-│   ├── publish_to_wechat_daily.sh      # 每日定时发布脚本
-│   └── send_ai_news.sh                 # 获取资讯并输出
-└── references/
-    ├── .env.example                        # 环境变量模板
-    ├── ai-news-fetcher.env.example         # ai-news-fetcher 专用环境变量
-    └── ai-news-fetcher.md                  # 本文件
-```
-
-> **注意：** `.env` 文件位于 `scripts/` 目录下。`wechat_api_client.py` 位于 `aicoding-news-weekly/scripts/` 下。
-
-## 前置条件
-
-### 1. 安装 Python 依赖
+在技能目录下运行：
 
 ```bash
-pip install requests python-dotenv openai
+# 获取最近一天的资讯，输出 Markdown
+python3 scripts/fetch_ai_news.py
+
+# 仅用规则分类
+python3 scripts/fetch_ai_news.py --method rule
+
+# 创建微信公众号草稿
+python3 scripts/publish_to_wechat.py --create-draft
+
+# 创建并发布文章
+python3 scripts/publish_to_wechat.py --publish
+
+# 指定日期创建草稿
+python3 scripts/publish_to_wechat.py --create-draft --date YYYY-MM-DD
+
+# 创建草稿时跳过 DevMaster 入库
+python3 scripts/publish_to_wechat.py --create-draft --no-db
 ```
 
-### 2. 配置 .env 文件
+`--days` 可指定查询天数。`--date` 仅由发布脚本支持。发布脚本负责串起获取、生成 Markdown、转换 HTML 和创建草稿，不要改为手工分步执行。`--publish` 会实际发布；预览时使用 `--create-draft`。
 
-在 `ai-news-fetcher/` 目录下创建 `.env` 文件：
+发布脚本将 Markdown 保存为 `ai-news-YYYY-MM-DD.md`：可用 `NEWS_OUTPUT_DIR` 指定目录，默认是技能目录下的 `output/`。单独运行获取脚本时，Markdown 输出到标准输出；若配置了 `DEVELMASTER_API_KEY`，该命令也会尝试写入 DevMaster。发布脚本可用 `--no-db` 跳过入库。
+
+## 配置
+
+按需在技能根目录 `.env` 中配置。获取资讯需要 RSS；AI 分类/热点、入库和公众号发布可分别配置：
 
 ```bash
-# 微信公众号 API 凭证（发布到公众号时需要）
-WECHAT_APPID=your_appid
-WECHAT_APPSECRET=your_appsecret
+AI_NEWS_API_KEY=...
+AI_NEWS_API_BASE=https://wexinrss.zeabur.app
 
-# baoyu-markdown-to-html skill 路径（发布到公众号时需要）
-BAOYU_MARKDOWN_TO_HTML_DIR=~/work/skills/baoyu-skills/skills/baoyu-markdown-to-html
-
-# devmaster.cn API 配置（AI 资讯入库）
-DEVELMASTER_API_KEY=your_api_key
-
-# OpenAI 兼容 API 配置（GLM 智能分类，第一优先；不配置则走 deepseek/关键词分类）
-OPENAI_API_KEY=your_api_key
-OPENAI_BASE_URL=https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1
-OPENAI_MODEL=deepseek-v4.1-flash
-
-# deepseek 配置（分类降级链第二优先；不配置则回退 ~/.hermes/.env，再失败走关键词分类）
-DEEPSEEK_API_KEY=your_api_key
+OPENAI_API_KEY=...
+OPENAI_BASE_URL=...
+OPENAI_MODEL=...
+DEEPSEEK_API_KEY=...
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
-```
 
-> **分类降级链**：GLM（第一优先）→ deepseek-v4-flash（第二优先）→ 关键词规则（兜底）。GLM 配额耗尽（code 1310）或超时自动降级，无需手动干预。
+DEVELMASTER_API_KEY=...
 
-### 3. devmaster.cn 资讯入库
-
-分类完成后，脚本会自动将资讯批量推送到 `https://devmaster.cn/api/ai-news/ingest`。
-
-**配置**：在 `.env` 中设置 `DEVELMASTER_API_KEY`。未配置时自动跳过。
-
-**API 格式**：
-```json
-{
-  "publishedDate": "2026-07-29",
-  "items": [
-    {"title": "...", "url": "...", "source": "公众号名", "category": "模型技术"}
-  ]
-}
-```
-
-**注意事项**：
-- category 使用原始分类名（带空格，如 `AI 算力`、`模型技术`），不能去掉空格（`AI算力` 会被 API 拒绝返回 422）
-- "其他"分类不在推送范围（API 不接受该分类值）
-- 推送失败不影响资讯生成和公众号发布流程
-
-### 3. 关联 Skill
-
-如需发布到微信公众号，还需要以下 skill：
-
-- **baoyu-markdown-to-html**：将 Markdown 转为微信公众号适配的 HTML
-- **aicoding-news-weekly**：提供 `wechat_api_client.py` 微信 API 封装
-
-> **注意：** 仅获取资讯（`fetch_ai_news.py`）无需以上依赖，只需 `requests` 和 `.env` 中的 RSS API 配置。
-
-## 使用方法
-
-### 1. 获取资讯（仅输出）
-
-```bash
-python3 scripts/fetch_ai_news.py
-```
-
-### 2. 发布到微信公众号后台草稿
-
-```bash
-python3 scripts/publish_to_wechat.py --create-draft
-```
-
-#### 使用自定义封面图（可选）
-
-```bash
-# 使用后台已有的封面图素材 ID
-python3 scripts/publish_to_wechat.py --create-draft --thumb-media-id YOUR_MEDIA_ID
-```
-
-> **注意：** 默认使用固定的封面图素材 ID，无需指定。
-
-## 配置说明
-
-### 环境变量（.env）
-
-在 `.env` 中配置：
-
-```bash
-# 微信公众号 API 凭证
-WECHAT_APPID=your_appid
-WECHAT_APPSECRET=your_appsecret
-
-# baoyu-markdown-to-html skill 路径（支持 ~ 写法）
+WECHAT_APPID=...
+WECHAT_APPSECRET=...
 BAOYU_MARKDOWN_TO_HTML_DIR=~/work/skills/baoyu-skills/skills/baoyu-markdown-to-html
+NEWS_OUTPUT_DIR=...
 ```
 
-### 修改 RSS API 密钥
+若主模型未配置或不可用，分类会尝试备用模型，再回退到脚本内置规则；热点总结只使用已配置的 AI 服务，失败时省略热点，不使用关键词兜底。RSS 地址末尾的斜杠由脚本处理。DeepSeek 密钥也可从 `~/.hermes/.env` 读取。
 
-通过环境变量或编辑 `scripts/fetch_ai_news.py`：
+## 发布依赖与故障处理
 
-```python
-RSS_API_KEY = os.getenv("AI_NEWS_API_KEY", "YOUR_API_KEY")
-RSS_API_BASE = os.getenv("AI_NEWS_API_BASE", "https://wexinrss.zeabur.app")
-```
-
-### 修改过滤的公众号
-
-编辑 `scripts/fetch_ai_news.py` 中的 `EXCLUDED_BIZ_IDS` 集合：
-
-```python
-EXCLUDED_BIZ_IDS = {
-    "3092970861",  # 公众号ID
-    # 添加更多...
-}
-```
-
-## 依赖
-
-- Python 3.6+
-- requests 库
-- python-dotenv 库
-- [baoyu-markdown-to-html](https://github.com/nicepkg/baoyu-markdown-to-html) skill（用于 Markdown 转 HTML）
-- [aicoding-news-weekly](../aicoding-news-weekly/) skill（提供 `wechat_api_client.py`）
-
-## Cron Job 执行注意事项
-
-### ⚠️ `execute_code` 在 cron 模式下被禁止
-
-**`execute_code` 在 cron job 中会被阻止**。**必须使用 `terminal()` 运行脚本。**
-
-### ⚠️ `terminal()` 安全扫描限制
-
-`terminal()` 会对命令内容进行安全扫描，`.app` TLD 域名和原始 IP 地址 URL 可能被拦截。敏感 URL 写在 Python 脚本内部，不在 `terminal()` 命令行中直接传递。
-
-### Cron Job 执行方式
-
-**直接调用 `publish_to_wechat.py --create-draft`，不要分步执行。** 脚本已内置全部流程（获取→分类→HTML转换→创建草稿）。
-
-```bash
-cd ~/.hermes/skills/felix-skills/skills/ai-news-fetcher && python3 scripts/publish_to_wechat.py --create-draft
-```
-
-**⚠️ 不要手写 Step 1/2/3 分步脚本**——分步执行会导致封面 ID、环境变量等与脚本内部不一致。
-
-### 关键路径
-
-- `.env` 文件位置：`~/.hermes/skills/felix-skills/skills/ai-news-fetcher/.env`（skill 根目录）
-- `publish_to_wechat.py`：`<root>/scripts/publish_to_wechat.py`（统一发布器，包含全流程）
-- `wechat_api_client.py`：`~/.hermes/skills/felix-skills/skills/aicoding-news-weekly/scripts/wechat_api_client.py`
-- `baoyu-markdown-to-html`：`~/work/skills/baoyu-skills/skills/baoyu-markdown-to-html/scripts/main.ts`
-- `.env` 归档备份：`~/.hermes/skills/.archive/ai-news-fetcher/.env`
-
-## ⚠️ 用户偏好：不精选，全部输出
-
-发布到微信公众号时，**所有抓取到的资讯必须全部保留**。LLM 仅用于智能分类和重要性排序，不能筛选/精选/删减文章数量。
-
-## 已知问题 / Pitfalls
-
-### ⚠️ 分类降级链：GLM → deepseek-v4-flash → 关键词规则（2026-08-24 更新）
-
-`.env` 配置的模型端点可能不稳定：会超时（120s+ 无响应）或遇配额上限（如 GLM code 1310「已达到每周/每月使用上限」）。
-
-**当前三级降级链**（`classify_news_with_ai` 内置，无需手动干预）：
-
-| 优先 | 引擎 | 配置来源 | 模型 | 触发条件 |
-|------|------|---------|------|---------|
-| 第1 | Hermes 主模型 | `.env`（OPENAI_*） | deepseek-v4.1-flash | 默认 |
-| 第2 | deepseek | `.env`（DEEPSEEK_*），回退 `~/.hermes/.env` | deepseek-v4-flash | GLM 超时/报错/返回无效内容 |
-| 第3 | 关键词规则 | 内置 | — | 两个 LLM 都失败 |
-
-- **GLM 配额 1310**：`Error code: 429` + `code 1310` → 自动降级 deepseek；有明确重置时间，重置后自动恢复
-- **超时**：`classify_news_with_ai` 内每个 LLM 请求 60s 超时（2026-08-24 从 300s 缩短，降低 cron 超时风险）
-- **强制规则分类**：`python3 scripts/fetch_ai_news.py --method rule`
-
-### ⚠️ GLM API 超时保护
-
-当前 `.env` 配置跟随 Hermes 主模型（`deepseek-v4.1-flash`，token-plan 兼容端点），该 API 的失败模式及降级：
-
-| 模式 | 表现 | 降级 |
-|------|------|------|
-| **限流/配额（429 / code 1310）** | 返回 `Error code: 429`，`code 1310`（每周/每月上限） | 自动降级 deepseek-v4-flash |
-| **挂起超时** | API 无响应，OpenAI client 在 **60 秒**后超时 | 自动降级 deepseek-v4-flash |
-| **分类质量差** | GLM 返回分析过程而非 JSON 分类结果 | `json.loads` 失败 → 降级 deepseek-v4-flash |
-
-**代码超时设置**（`fetch_ai_news.py` `_classify_with_llm`）：`httpx.Timeout(60.0, connect=15.0)`（2026-08-24 从 300s 缩短）。
-
-**默认使用 `method="ai"`（大模型分类），失败自动降级：GLM → deepseek-v4-flash → 关键词规则。**
-- `method="ai"` 使用 OpenAI 兼容 API 进行智能分类，超时或失败时自动降级
-- `method="rule"` 仅用纯关键词分类，可在 AI API 不可用时手动指定
-
-### ⚠️ `.env` 文件位置
-
-脚本中 `SCRIPT_DIR = Path(__file__).resolve().parent`（即 `scripts/` 目录），`SKILL_ROOT = SCRIPT_DIR.parent`（即 skill 根目录 `ai-news-fetcher/`），`ENV_FILE = SKILL_ROOT / ".env"`。因此 **`.env` 在 skill 根目录**（`~/.hermes/skills/felix-skills/skills/ai-news-fetcher/.env`），不是 `scripts/` 下。
-
-归档备份位置：`~/.hermes/skills/.archive/ai-news-fetcher/.env`
-
-### ✅ `.env` 中 OPENAI_BASE_URL 问题（2026-08-24 已修复）
-
-曾存在：`OPENAI_BASE_URL= https://open.bigmodel.cn/api/coding/paas/v4` 值前有多余空格，且 `coding/paas/v4` 是编码专用端点（可能返回空响应）。标准端点为 `https://open.bigmodel.cn/api/paas/v4`。
-
-**2026-08-24 修复**：`fetch_ai_news.py` 读取时已 `.strip()` 处理空格，并将默认值改为标准端点 `https://open.bigmodel.cn/api/paas/v4`。
-
-### ⚠️ `AI_NEWS_API_BASE` 末尾斜杠导致 404
-
-`.env` 中 `AI_NEWS_API_BASE=http://8.130.209.77:8081/` 末尾带 `/`，脚本拼接 URL 时产生双斜杠 `http://8.130.209.77:8081//api/query`，返回 404。
-
-**修复**：加载环境变量后立即 `.rstrip('/')`：
-```python
-api_base = os.getenv('AI_NEWS_API_BASE', 'https://wexinrss.zeabur.app')
-os.environ['AI_NEWS_API_BASE'] = api_base.rstrip('/')
-```
-
-### ⚠️ `execute_code` 在 cron 模式下被禁止
-
-`execute_code` 在 cron job 中会被阻止（无用户审批）。**不要在 cron 流程中使用 `execute_code`，用 `terminal()` 代替。** 中间结果通过 `/tmp/` 文件在步骤间传递。
-
-### ⚠️ `terminal()` 安全扫描会拦截敏感 URL
-
-`terminal()` 会对命令文本进行安全扫描，`.app` TLD 域名和原始 IP 地址 URL 都可能被标记。**解决方案**：将 URL 写入 Python 脚本内部，不在 `terminal()` 命令行中直接传递。
-
-### ⚠️ WeChat `thumb_media_id` 会过期
-
-微信永久素材的 `thumb_media_id` **并非真正永久**——一段时间后可能失效，报 `40007: invalid media_id`。
-
-**恢复流程**：当草稿创建失败并返回 `40007` 时：
-1. 用 PIL 生成简单封面图（渐变背景 + 装饰），保存为 `/tmp/ai_news_cover.jpg`
-2. 调用 `client.upload_permanent_material('/tmp/ai_news_cover.jpg', 'thumb')` 获取新 `thumb_media_id`
-3. 用新 ID 创建草稿
-4. **更新 `publish_to_wechat.py` 中的 `DEFAULT_THUMB_MEDIA_ID`**
-
-> **⚠️ 历史教训（2026-06-24）**：旧版 SKILL.md 的"Cron Job 推荐执行流程"在 Step 3 里硬编码了一个旧 `thumb_media_id`，导致 cron 执行时分步脚本与 `publish_to_wechat.py` 使用了不同的封面 ID。已修复为直接调用脚本，不再分步。如果 SKILL.md 或 cron prompt 中出现 `thumb_media_id` 硬编码值，必须与脚本中的 `DEFAULT_THUMB_MEDIA_ID` 保持同步。
-
-**⚠️ `upload_permanent_material` 返回值是字符串，不是 dict**：该方法直接返回 `media_id` 字符串，**不是** `{"media_id": "xxx"}`。不要用 `result.get('media_id')`，直接 `new_id = result` 即可。
-
-**生成封面图注意事项**：
-- macOS 上 PIL 可用字体路径：`/System/Library/Fonts/STHeiti Medium.ttc` 或 `/System/Library/Fonts/Hiragino Sans GB.ttc`。**`PingFang.ttc` 不存在**，不要使用。
-- 微信公众号封面标准比例：900×383（2.35:1），不是 900×500。
-- 可用 `scripts/generate_cover.py` 快速生成标准封面。
-
-> **改进建议**：把 `DEFAULT_THUMB_MEDIA_ID` 存到 `.env`（如 `WECHAT_THUMB_MEDIA_ID=...`），而非硬编码在 SKILL.md 示例脚本里。更新 `.env` 比 patch SKILL.md 更方便，且 cron 脚本可直接 `os.getenv('WECHAT_THUMB_MEDIA_ID')` 读取。
-
-### ⚠️ 微信 45166 invalid content hint：markdown 标题含未转义 `]`（2026-09-10）
-
-文章标题本身含 `]`（如 `【豆包工作]` 半角括号混用）时，markdown 链接 `[标题](url)` 的解析会被标题内的 `]` 提前截断，生成畸形链接文本/URL，微信 API 报 `45166: invalid content hint`，草稿创建失败。修复：把标题中的半角 `]` 改为全角 `】` 后重新生成 HTML 再提交即可成功。草稿 API 的 title 偶发乱码（编码问题）但不影响内容，后台可手动改标题。
-
-另注意：`--date <今天>` 查询当天数据可能为空（RSS 数据源延迟），重试时应使用默认「最近 1 天」。`--date` 模式会覆盖同名日报 md 文件。
-
-### 微信公众号发布
-
-- **cron 和手动场景都直接调用 `publish_to_wechat.py --create-draft`**，不要分步执行
-- 脚本内部已处理获取、分类、HTML转换、创建草稿的全流程
-- 通过 `.env` 环境变量配置 `baoyu-markdown-to-html` 路径
-- 通过相对路径引用 `aicoding-news-weekly/scripts/wechat_api_client.py`
-- 支持创建草稿和发布文章两种模式
-
-## 输出示例
-
-```markdown
-## AI 资讯日报
-
-### ⚡ AI 算力（2 条）
-
-1. [英伟达发布B300 GPU，训练成本再降30%](https://...)
-2. [北京启动"银河算廊"工程，加快智算中心建设](https://...)
-
-### 🧠 模型技术（3 条）
-
-1. [DeepSeek发布最新推理模型，多项基准登顶](https://...)
-2. [Mind Lab开源Macaron V1，采用Mixture-of-LoRA架构](https://...)
-
-### 🏗️ Agent基建（3 条）
-
-1. [一文讲透Agent三件套：MCP、Skill、Hook如何给大模型装上护栏](https://...)
-2. [AIP协议更新：多智能体协作标准化迈向新阶段](https://...)
-
-### 💻 AI软件工程（2 条）
-
-1. [Claude Code新功能：一键生成完整项目脚手架](https://...)
-2. [Cursor推出团队协作模式，AI编程再进化](https://...)
-
-### 🎨 内容创作（2 条）
-
-1. [Seedance推出AI短剧一键生成功能](https://...)
-2. [LibTV开源：AI视频编辑的新选择](https://...)
-
-### 📊 个人生产力（2 条）
-
-1. [WPS灵犀专业版：用Agent专治Word填表难题](https://...)
-2. [ChatCut自动化剪辑：AI粗加工+人工精修新模式](https://...)
-
-### 🏭 行业应用（1 条）
-
-1. [AI Agent进入金融投资决策：顶尖投行的新选择](https://...)
-
-### 📱 智能终端（1 条）
-
-1. [Apple Intelligence新功能：端侧推理深度集成](https://...)
-
-### 📈 其他AI相关（2 条）
-
-1. [OpenAI 上市进程加速](https://...)
-2. [梁文锋谈持续学习：Agent的未来更在于自我进化](https://...)
-```
+- 微信发布需要 `baoyu-markdown-to-html` 和 `aicoding-news-weekly/scripts/wechat_api_client.py`。凭证、密钥等敏感信息只放在 `.env`，不要写入文档或提交到版本库。
+- 微信封面素材 ID 可能过期。若草稿接口报 `40007 invalid media_id`，重新上传封面后更新发布脚本默认素材 ID，或用 `--cover-image` / `--thumb-media-id` 指定封面。
+- 若微信报 `45166 invalid content hint`，检查资讯标题中的半角 `]` 是否破坏 Markdown 链接，修正后再创建草稿。
+- 获取失败时先检查 RSS 服务和网络；AI 分类或热点失败时查看脚本日志中的模型降级信息。

@@ -652,12 +652,98 @@ def get_raw_news(days: int = 1) -> list:
         return []
 
 
-def format_news_markdown(news_list, categories, start_date, end_date, platform="feishu"):
+def summarize_hot_topics_with_ai(news_list):
+    """用分类所使用的 LLM 服务按标题归纳热点；失败时返回空列表，不做关键词兜底。"""
+    if not news_list:
+        return []
+
+    titles = "\n".join(f"{i + 1}. {item['title']}" for i, item in enumerate(news_list))
+    prompt = f"""请仅根据以下 {len(news_list)} 条文章标题，归纳今天报道最集中的热点。
+
+要求：
+1. 按同一事件、产品发布、公司动作或明确议题合并标题；不要把共同出现的泛词当作热点。
+2. 最多输出 5 个热点，只保留至少涉及 2 篇文章的主题；按涉及文章数从多到少排序。
+3. 每个热点用具体、易懂的一句话概括主题，并给出简短摘要，说明多篇文章共同报道了什么。
+4. articles 必须填写对应标题的序号，不能虚构或重复序号；篇数由这些序号决定。
+5. 标题不足以确认同一主题时不要合并；没有符合条件的热点则返回空数组。
+
+标题列表：
+{titles}
+
+只输出 JSON，格式：
+{{"topics":[{{"topic":"具体热点标题","summary":"一句话摘要","articles":[1,2]}}]}}"""
+
+    providers = []
+    if OPENAI_API_KEY and OPENAI_API_KEY != 'your_api_key':
+        providers.append((OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL, "主模型"))
+    if DEEPSEEK_API_KEY and DEEPSEEK_API_KEY != 'your_api_key':
+        providers.append((DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, "deepseek"))
+
+    for api_key, base_url, model, label in providers:
+        try:
+            print(f"🤖 使用 {model} 总结今日热点...")
+            client = OpenAI(api_key=api_key, base_url=base_url,
+                            timeout=httpx.Timeout(60.0, connect=15.0))
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "你是 AI 资讯编辑，擅长根据标题识别多篇文章共同报道的具体事件和主题。只输出 JSON。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.2,
+                    response_format={"type": "json_object"},
+                    extra_body={"enable_thinking": False},
+                )
+            except Exception:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "你是 AI 资讯编辑，擅长根据标题识别多篇文章共同报道的具体事件和主题。只输出 JSON。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.2,
+                    response_format={"type": "json_object"},
+                )
+            content = response.choices[0].message.content.strip()
+            if content.startswith("```"):
+                content = "\n".join(content.splitlines()[1:-1])
+            topics = json.loads(content).get("topics", [])
+            valid_topics = []
+            for topic in topics:
+                if not isinstance(topic, dict):
+                    continue
+                indices = topic.get("articles", [])
+                if not isinstance(indices, list):
+                    continue
+                indices = sorted({i for i in indices if isinstance(i, int) and 1 <= i <= len(news_list)})
+                title = str(topic.get("topic", "")).strip()
+                summary = str(topic.get("summary", "")).strip()
+                if title and summary and len(indices) >= 2:
+                    valid_topics.append({"topic": title, "summary": summary, "count": len(indices)})
+            valid_topics.sort(key=lambda item: item["count"], reverse=True)
+            print(f"✅ {label} 热点总结完成")
+            return valid_topics[:5]
+        except Exception as e:
+            print(f"⚠️ {label} 热点总结失败: {str(e)}")
+    print("⚠️ AI 服务不可用，跳过热点板块")
+    return []
+
+
+def format_news_markdown(news_list, categories, start_date, end_date, platform="feishu", hot_topics=None):
     """将资讯格式化为 Markdown"""
     lines = []
     
     lines.append("## AI 资讯日报")
     lines.append("")
+
+    hot_topics = hot_topics or []
+    if hot_topics:
+        lines.append("### 🔥 今日热点")
+        lines.append("")
+        for index, topic in enumerate(hot_topics, 1):
+            lines.append(f"{index}. **{topic['topic']}**：{topic['summary']}")
+        lines.append("")
     
     ai_news_count = sum(len(indices) for indices in categories.values() if indices)
     
@@ -771,7 +857,8 @@ def get_news_summary(days: int = 1, classify: bool = True, platform: str = "feis
         else:
             categories = {"AI相关": list(range(len(news_list)))}
 
-        result, filtered = format_news_markdown(news_list, categories, yesterday, today, platform)
+        hot_topics = summarize_hot_topics_with_ai(news_list)
+        result, filtered = format_news_markdown(news_list, categories, yesterday, today, platform, hot_topics)
         
         # 推送到 devmaster.cn 数据库
         if push_db:
