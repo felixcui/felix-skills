@@ -827,7 +827,8 @@ def format_news_markdown(news_list, categories, start_date, end_date, platform="
         lines.append("### 🔥 今日热点")
         lines.append("")
         for index, topic in enumerate(hot_topics, 1):
-            lines.append(f"{index}. **{topic['topic']}**：{topic['summary']}")
+            # 不加粗：与其它章节条目（普通字重）保持一致的排版观感
+            lines.append(f"{index}. {topic['topic']}：{topic['summary']}")
         lines.append("")
     
     ai_news_count = sum(len(indices) for indices in categories.values() if indices)
