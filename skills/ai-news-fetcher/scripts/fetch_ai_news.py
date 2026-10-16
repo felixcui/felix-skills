@@ -137,6 +137,25 @@ RSS_API_BASE = os.getenv("AI_NEWS_API_BASE", "https://wexinrss.zeabur.app")
 # 修复末尾斜杠导致 404 的问题
 RSS_API_BASE = RSS_API_BASE.rstrip('/')
 
+# ========== 分类体系（唯一事实来源） ==========
+# 顺序即日报展示顺序；「其他」为兜底桶，不参与内容分类（仅接收非 AI 或未覆盖条目）。
+# 下方所有 category_order / CATEGORY_ICONS 均由此派生，避免多处硬编码导致漂移。
+CATEGORY_ORDER = [
+    "AI 算力",
+    "模型技术",
+    "Agent基建",
+    "AI软件工程",
+    "内容创作",
+    "个人生产力",
+    "行业应用",
+    "智能终端",
+    "其他AI相关",
+    "其他",
+]
+FALLBACK_CATEGORY = "其他"
+# 参与内容展示的分类（不含兜底桶）
+CONTENT_CATEGORIES = [c for c in CATEGORY_ORDER if c != FALLBACK_CATEGORY]
+
 # 分类图标映射（10分类新版）
 CATEGORY_ICONS = {
     "AI 算力": "⚡",
@@ -151,6 +170,75 @@ CATEGORY_ICONS = {
     "其他": "📂"
 }
 
+_CATEGORY_RANK = {name: i for i, name in enumerate(CATEGORY_ORDER)}
+
+
+def _normalize_categories(raw_categories, news_count):
+    """把 LLM 返回的分类结果规整为安全、可渲染的结构。
+
+    解决的问题（原先全部静默失效）：
+    1. 索引必须是 1..news_count 的整数：过滤 0-based 返回、负数、越界值、
+       bool（isinstance(True, int) 为 True 会穿过原校验）。
+    2. 完整性校验不再依赖「集合大小 == 条数」——越界值和重复值都会凑数骗过它。
+       改为逐条断言覆盖且唯一。
+    3. 跨类重复按 CATEGORY_ORDER 优先级去重，保证下游每个出口只看到一条。
+    4. 模型自创的分类名归入兜底桶并告警，不再静默整类丢失。
+
+    返回 (categories, stats)；categories 的索引已转为 0-based。
+    """
+    stats = {"越界索引": 0, "非法索引": 0, "未知分类": 0, "跨类重复": 0, "补漏": 0}
+    cleaned = {name: [] for name in CATEGORY_ORDER}
+    owner = {}  # 0-based 索引 -> 当前归属分类，用于跨类重复时按优先级仲裁
+    seen = set(owner.keys())
+
+    for cat, indices in (raw_categories or {}).items():
+        # 模型可能自创分类名，统一归入兜底桶而非整类丢弃
+        if cat not in _CATEGORY_RANK:
+            stats["未知分类"] += 1
+            target = FALLBACK_CATEGORY
+        else:
+            target = cat
+
+        if not isinstance(indices, list):
+            stats["非法索引"] += len(indices) if isinstance(indices, (list, tuple, set)) else 1
+            continue
+
+        for idx in indices:
+            # bool 是 int 的子类，必须显式排除
+            if isinstance(idx, bool) or not isinstance(idx, int):
+                stats["非法索引"] += 1
+                continue
+            # 契约是 1-based；先校验再去程，避免 0-based 返回产生 -1 回绕到列表末尾
+            zero_based = idx - 1
+            if zero_based < 0 or zero_based >= news_count:
+                stats["越界索引"] += 1
+                continue
+            if zero_based in seen:
+                # 同一条被分到多个分类：按 CATEGORY_ORDER 取更靠前者，与展示顺序一致
+                stats["跨类重复"] += 1
+                if _CATEGORY_RANK[target] < _CATEGORY_RANK[owner[zero_based]]:
+                    cleaned[owner[zero_based]].remove(zero_based)
+                    cleaned[target].append(zero_based)
+                    owner[zero_based] = target
+                continue
+            seen.add(zero_based)
+            cleaned[target].append(zero_based)
+            owner[zero_based] = target
+
+    # 逐条补漏：任何未被覆盖的下标都进兜底桶
+    missing = [i for i in range(news_count) if i not in seen]
+    if missing:
+        cleaned[FALLBACK_CATEGORY].extend(missing)
+        stats["补漏"] = len(missing)
+
+    return cleaned, stats
+
+
+def _describe_category_stats(stats):
+    """把规整统计拼成一行告警，仅在有异常时输出。"""
+    parts = [f"{k}{v}" for k, v in stats.items() if v]
+    return "｜".join(parts) if parts else ""
+
 
 def _classify_with_llm(news_list, api_key, base_url, model, provider_label):
     """使用指定 LLM（OpenAI 兼容 API）进行智能分类（10分类新版）
@@ -164,11 +252,11 @@ def _classify_with_llm(news_list, api_key, base_url, model, provider_label):
     prompt = f"""请对以下 {len(news_list)} 条资讯进行智能分类。
 
 【重要原则】
-1. 所有资讯都与AI/科技相关，请优先归入前9个分类，未匹配的归入"其他"
-2. "其他"用于：跨分类综合话题等未完全落入上述分类的AI相关内容
-3. 当一条资讯可能属于多个分类时，选择最核心、最突出的那个
-5. 融资/投资/并购类文章，应先看其技术主题归入对应分类（如融资做AI编程→AI软件工程），而非一律归入"其他AI相关"
-4. 索引从 1 开始，与上面的序号对应
+1. 先判断该资讯是否与 AI 实质性相关：若只是招聘、活动、招商、榜单、征稿、评选等非 AI 主题，归入"其他"；若确为 AI 相关，再归入最贴切的一个分类
+2. "其他"用于：与 AI 无关的内容，或无法判断是否与 AI 相关的内容
+3. 当一条资讯可能属于多个分类时，选择最核心、最突出的那个，且每条资讯只能归入一个分类
+4. 融资/投资/并购类文章，应先看其技术主题归入对应分类（如融资做AI编程→AI软件工程），而非一律归入"其他AI相关"
+5. 索引从 1 开始，与上面的序号对应；必须为 1 到 {len(news_list)} 的整数，不得重复
 
 资讯列表：
 {titles}
@@ -219,7 +307,7 @@ def _classify_with_llm(news_list, api_key, base_url, model, provider_label):
 - 包含：产品战略、市场分析、行业观点、趋势预测
 - 包含：深度分析、人物访谈、行业报告
 
-**其他** - 与AI相关但未完全落入上述分类的内容，或跨分类综合话题
+**其他** - 与 AI 无关的内容（招聘、活动、招商、榜单、征稿、评选等），或无法判断是否与 AI 相关的内容
 
 请以 JSON 格式输出分类结果，格式如下：
 {{
@@ -237,72 +325,85 @@ def _classify_with_llm(news_list, api_key, base_url, model, provider_label):
 
 只输出 JSON，不要输出其他内容。"""
 
+    system_prompt = "你是一个专业的 AI 资讯分类助手，擅长将科技资讯准确归类。只输出 JSON，不要输出其他内容。"
+    request_kwargs = dict(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.1,
+        response_format={"type": "json_object"},
+    )
+
     try:
         print(f"🤖 使用 {model} 进行 AI 分类...")
-        
-        client = OpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            timeout=httpx.Timeout(60.0, connect=15.0),
-        )
-        
+
+        try:
+            client = OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                timeout=httpx.Timeout(60.0, connect=15.0),
+            )
+        except Exception as e:
+            # 配置类错误：API Key 缺失/非法、base_url 不合法等，无需重试
+            print(f"❌ {provider_label} 客户端初始化失败（检查 API Key / BASE_URL）: {type(e).__name__}: {str(e)[:120]}")
+            return None
+
         try:
             response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "你是一个专业的 AI 资讯分类助手，擅长将科技资讯准确归类。只输出 JSON，不要输出其他内容。"},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                response_format={"type": "json_object"},
                 # 推理模型默认会输出思考内容，分类只需要 JSON，关闭思考
                 extra_body={"enable_thinking": False},
+                **request_kwargs,
             )
         except Exception as e:
             # 端点不支持 enable_thinking 时回退重试
-            print(f"ℹ️ {provider_label} 不支持 enable_thinking，回退重试: {str(e)[:80]}")
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "你是一个专业的 AI 资讯分类助手，擅长将科技资讯准确归类。只输出 JSON，不要输出其他内容。"},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                response_format={"type": "json_object"},
-            )
-        
-        response_text = response.choices[0].message.content.strip()
-        
+            print(f"ℹ️ {provider_label} 不支持 enable_thinking，回退重试: {type(e).__name__}: {str(e)[:80]}")
+            try:
+                response = client.chat.completions.create(**request_kwargs)
+            except Exception as e2:
+                print(f"❌ {provider_label} 接口调用失败: {type(e2).__name__}: {str(e2)[:120]}")
+                return None
+
+        response_text = (response.choices[0].message.content or "").strip()
+
         # 提取 JSON（兼容 markdown 代码块包裹的情况）
         if response_text.startswith('```'):
-            # 去掉 ```json ... ``` 包裹
-            lines = response_text.split('\n')
-            response_text = '\n'.join(lines[1:-1])
-        
-        categories = json.loads(response_text)
-        
-        # 索引转换：API 返回的索引从 1 开始，内部使用从 0 开始
-        converted = {}
-        for cat, indices in categories.items():
-            converted[cat] = [idx - 1 for idx in indices if isinstance(idx, int)]
-        categories = converted
-        
-        # 验证分类结果：将遗漏的资讯归入"其他"
-        all_indices = set()
-        for cat_indices in categories.values():
-            all_indices.update(cat_indices)
-        
-        if len(all_indices) < len(news_list):
-            missing = [i for i in range(len(news_list)) if i not in all_indices]
-            if "其他" not in categories:
-                categories["其他"] = []
-            categories["其他"].extend(missing)
-        
+            # 去掉 ```json ... ``` 包裹。用 find 定位真正的闭合围栏，
+            # 避免「只有开头围栏」时按行盲切得到空串。
+            body = response_text.split('\n', 1)[1] if '\n' in response_text else ''
+            fence = body.rfind('```')
+            response_text = (body[:fence] if fence != -1 else body).strip()
+
+        if not response_text:
+            print(f"❌ {provider_label} 返回内容为空（可能被内容过滤或模型未输出）")
+            return None
+
+        try:
+            raw_categories = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            # 解析类错误：模型未遵循 JSON 约定，与网络错误区分开便于定位
+            print(f"❌ {provider_label} 返回非合法 JSON: {e}")
+            print(f"   原始返回（前 200 字）: {response_text[:200]}")
+            return None
+
+        if not isinstance(raw_categories, dict):
+            print(f"❌ {provider_label} 返回的 JSON 顶层不是对象，而是 {type(raw_categories).__name__}")
+            return None
+
+        # 规整：过滤非法/越界索引、跨类去重、逐条补漏
+        categories, stats = _normalize_categories(raw_categories, len(news_list))
+
+        detail = _describe_category_stats(stats)
+        if detail:
+            print(f"⚠️ {provider_label} 分类结果已规整: {detail}")
+
         print(f"✅ {provider_label} 分类完成")
         return categories
-        
+
     except Exception as e:
-        print(f"❌ {provider_label} 分类失败: {str(e)}")
+        # 兜底：保留类型信息，便于区分网络/解析/未知错误
+        print(f"❌ {provider_label} 分类失败（未预期错误 {type(e).__name__}）: {str(e)[:150]}")
         return None
 
 
@@ -343,18 +444,7 @@ def classify_by_keywords(news_list):
     print(f"🏷️  关键词规则分类 {len(news_list)} 条资讯...")
 
     classified = set()
-    categories = {
-        "AI 算力": [],
-        "模型技术": [],
-        "Agent基建": [],
-        "AI软件工程": [],
-        "内容创作": [],
-        "个人生产力": [],
-        "行业应用": [],
-        "智能终端": [],
-        "其他AI相关": [],
-        "其他": [],
-    }
+    categories = {name: [] for name in CATEGORY_ORDER}
 
     # 非AI内容关键词（仅过滤明显与AI无关的内容）
     non_ai_keywords = [
@@ -566,13 +656,8 @@ def push_to_develmaster(news_list, categories):
     items = []
     seen_indices = set()
     
-    # 按分类顺序遍历，跳过"其他"分类
-    category_order = [
-        "AI 算力", "模型技术", "Agent基建", "AI软件工程",
-        "内容创作", "个人生产力", "行业应用", "智能终端", "其他AI相关",
-    ]
-    
-    for category in category_order:
+    # 按分类顺序遍历，跳过"其他"分类（列表来自 CATEGORY_ORDER，避免重复硬编码）
+    for category in CONTENT_CATEGORIES:
         if category not in categories:
             continue
         api_category = category  # 直接使用原始分类名（API 接受带空格的格式）
@@ -750,22 +835,12 @@ def format_news_markdown(news_list, categories, start_date, end_date, platform="
     if ai_news_count == 0:
         lines.append("😊 暂无AI相关资讯～")
         lines.append("")
-        return "\n".join(lines)
-    
-    # 按顺序输出分类
-    category_order = [
-        "AI 算力",
-        "模型技术",
-        "Agent基建",
-        "AI软件工程",
-        "内容创作",
-        "个人生产力",
-        "行业应用",
-        "智能终端",
-        "其他AI相关",
-    ]
-    
-    for category in category_order:
+        # 早退分支也必须返回 tuple：调用方无条件解包 (result, filtered)，
+        # 原先此处返回 str，会在「全部条目被归入其他」时抛 TypeError。
+        return "\n".join(lines), []
+
+    # 按顺序输出分类（列表来自 CATEGORY_ORDER，避免重复硬编码）
+    for category in CONTENT_CATEGORIES:
         if category not in categories or not categories[category]:
             continue
             
@@ -787,10 +862,10 @@ def format_news_markdown(news_list, categories, start_date, end_date, platform="
         
         lines.append("")
     
-    # 生成被过滤资讯的列表
+    # 生成被过滤资讯的列表（兜底桶 = 非 AI 内容，不进日报正文，仅输出到 stderr）
     filtered = []
-    if "其他" in categories and categories["其他"]:
-        for idx in categories["其他"]:
+    if categories.get(FALLBACK_CATEGORY):
+        for idx in categories[FALLBACK_CATEGORY]:
             news = news_list[idx]
             filtered.append(f"• {news['title']}")
     
