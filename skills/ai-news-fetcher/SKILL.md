@@ -35,6 +35,16 @@ python3 scripts/publish_to_wechat.py --create-draft --no-db
 
 发布脚本将 Markdown 保存为 `ai-news-YYYY-MM-DD.md`：可用 `NEWS_OUTPUT_DIR` 指定目录，默认是技能目录下的 `output/`。单独运行获取脚本时，Markdown 输出到标准输出；若配置了 `DEVELMASTER_API_KEY`，该命令也会尝试写入 DevMaster。发布脚本可用 `--no-db` 跳过入库。
 
+## 日报内容口径（用户明确要求，改前先确认）
+
+- **今日热点每条一句话**：直接讲事实——发生了什么、谁做了什么、有什么关键数字或影响。不要「主题：说明」两截式，不要用冒号把一句话切成前后两半；热点 JSON 只出 `topic` 一个字段，不出 `summary`。
+- **禁止元叙述**：不写「多篇文章报道」「多篇文章围绕」「集中报道」「篇文章」「标题」「篇数」这类描述报道行为的措辞——读者只关心事情本身，不关心有几篇报道。
+- **热点条目不设加粗**：正文里的 `<strong>` 是全文唯一的加粗正文，观感与其它章节（普通字重）不一致；热点条目与分类条目保持同一字重。
+- **`###` 小标题保持加粗**：调整正文样式时不要连带改标题。
+- **公众号与飞书同一口径**：两端共用同一份 markdown，不要按平台分叉（`format_news_markdown` 的 `platform` 参数是历史遗留，函数里并未使用）。
+- 上述任一条要改，必须同时改三处：`summarize_hot_topics_with_ai` 的提示词、`valid_topics` 的字段校验、`format_news_markdown` 的条目拼装。只改一处会出现「模型输出两句、排版只拼一句」的错位。
+- 改完要实跑验证（提示词改动跑一次真实标题集；排版改动渲染后数 `<strong>`），并按 [references/wechat-draft-refresh.md](references/wechat-draft-refresh.md) 原地刷新当天草稿。
+
 ## 配置
 
 按需在技能根目录 `.env` 中配置。获取资讯需要 RSS；AI 分类/热点、入库和公众号发布可分别配置：

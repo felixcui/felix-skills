@@ -103,6 +103,7 @@ Important:
 
 - **`40164: invalid ip <x.x.x.x> ... not in whitelist`** = 该公众号开了 API IP 白名单，当前出口 IP 不在名单里 → 连 access_token 都拿不到，草稿**不会**创建（跟文章内容无关）。让用户到公众号后台 → 设置与开发 → 基本配置 → **IP 白名单**加上错误信息里那个 IP，然后原样重跑发布即可（文章与封面都已就绪，不用重做）。诊断时可用另一个 appid 比对：换个能跑通的号取 token，能拿到就证明是我们这侧 IP、不是全局故障。
 - **多账号要分清 appid**：不同公众号的 token 各走自己的白名单与凭证，报错里带上 appid 再判断，别把 A 号的失败当成整条链路坏了。
+- **只是改排版、文中草稿已存在时，别重跑发布**（会多出一份草稿）：用 `draft/update` 原地更新，`media_id` 沿用 `batchget` 拿到的值。要点：`batchget` 不返回封面 `thumb_media_id`（空串），需从发布脚本的默认封面素材取值补上；`update` 的 `articles` 是**对象**而非数组。完整 payload 与回读校验步骤见 `ai-news-fetcher` 的 [references/wechat-draft-refresh.md]（同为媒体流水线，流程一致）。
 
 ### 4. Report completion
 
