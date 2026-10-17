@@ -748,15 +748,16 @@ def summarize_hot_topics_with_ai(news_list):
 要求：
 1. 按同一事件、产品发布、公司动作或明确议题合并标题；不要把共同出现的泛词当作热点。
 2. 最多输出 5 个热点，只保留至少涉及 2 篇文章的主题；按涉及文章数从多到少排序。
-3. 每个热点用具体、易懂的一句话概括主题，并给出简短摘要，说明多篇文章共同报道了什么。
-4. articles 必须填写对应标题的序号，不能虚构或重复序号；篇数由这些序号决定。
-5. 标题不足以确认同一主题时不要合并；没有符合条件的热点则返回空数组。
+3. 每个热点只写一句话（整句，25~60 字）：直接陈述事实——发生了什么、谁做了什么、有什么关键数字或影响。不要拆成「主题：说明」两截，不要用冒号把一句话分成前后两部分，不要写成「标题 + 补充说明」。
+4. 严禁出现「多篇文章报道」「多篇文章围绕」「多篇报道」「集中报道」「多篇文章」「文章」「标题」「篇数」这类描述报道行为的元话语：读者不关心有几篇报道，只关心事情本身。
+5. articles 必须填写对应标题的序号，不能虚构或重复序号；该字段仅供排序使用，不会展示给读者。
+6. 标题不足以确认同一主题时不要合并；没有符合条件的热点则返回空数组。
 
 标题列表：
 {titles}
 
 只输出 JSON，格式：
-{{"topics":[{{"topic":"具体热点标题","summary":"一句话摘要","articles":[1,2]}}]}}"""
+{{"topics":[{{"topic":"一句话热点（整句，直接陈述事实，25-60字）","articles":[1,2]}}]}}"""
 
     providers = []
     if OPENAI_API_KEY and OPENAI_API_KEY != 'your_api_key':
@@ -773,7 +774,7 @@ def summarize_hot_topics_with_ai(news_list):
                 response = client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": "你是 AI 资讯编辑，擅长根据标题识别多篇文章共同报道的具体事件和主题。只输出 JSON。"},
+                        {"role": "system", "content": "你是 AI 资讯编辑，擅长从一批标题里归纳具体事件，并用资讯口吻直接讲清楚事情本身。只输出 JSON。"},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0.2,
@@ -784,7 +785,7 @@ def summarize_hot_topics_with_ai(news_list):
                 response = client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": "你是 AI 资讯编辑，擅长根据标题识别多篇文章共同报道的具体事件和主题。只输出 JSON。"},
+                        {"role": "system", "content": "你是 AI 资讯编辑，擅长从一批标题里归纳具体事件，并用资讯口吻直接讲清楚事情本身。只输出 JSON。"},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0.2,
@@ -804,8 +805,13 @@ def summarize_hot_topics_with_ai(news_list):
                 indices = sorted({i for i in indices if isinstance(i, int) and 1 <= i <= len(news_list)})
                 title = str(topic.get("topic", "")).strip()
                 summary = str(topic.get("summary", "")).strip()
-                if title and summary and len(indices) >= 2:
-                    valid_topics.append({"topic": title, "summary": summary, "count": len(indices)})
+                if not title or len(indices) < 2:
+                    continue
+                # 兼容旧格式（topic + summary）：一句话要求下只保留 topic，
+                # 但若模型仍给出 summary 且 topic 明显只是短语，则拼接成一句
+                if summary and ('：' not in title and ':' not in title) and len(title) < 20 and title not in summary:
+                    title = f"{title}——{summary}"
+                valid_topics.append({"topic": title, "summary": summary, "count": len(indices)})
             valid_topics.sort(key=lambda item: item["count"], reverse=True)
             print(f"✅ {label} 热点总结完成")
             return valid_topics[:5]
@@ -827,8 +833,9 @@ def format_news_markdown(news_list, categories, start_date, end_date, platform="
         lines.append("### 🔥 今日热点")
         lines.append("")
         for index, topic in enumerate(hot_topics, 1):
-            # 不加粗：与其它章节条目（普通字重）保持一致的排版观感
-            lines.append(f"{index}. {topic['topic']}：{topic['summary']}")
+            # 一句话热点：不再拼「主题：说明」两截
+            text = (topic.get("topic") or topic.get("summary") or "").strip()
+            lines.append(f"{index}. {text}")
         lines.append("")
     
     ai_news_count = sum(len(indices) for indices in categories.values() if indices)
