@@ -270,6 +270,8 @@ FEISHU_FIELDS = ["title", "link", "description", "source", "category", "updateti
 
 > ⚠️ **`category` 与 `tool` 是飞书 AI 字段**（字段元数据带 `__has_field_extension: builtin_llm_completion`）：值由飞书自己的模型重新分类，**脚本写进去的分类会被覆盖**。所以脚本日志 / 结果 JSON 里的「🏷️ 分类: X」与表格实际存的分类可能不一致（实测同一记录脚本算 `模型技术`、表格存 `Agent基建`）。**汇报给用户时一律用回读值**，不要引用脚本日志；要确认某列是不是 AI 字段：`lark-cli base +field-list --base-token <token> --table-id <table> --as user`，看 `__has_field_extension`。
 
+> ⚠️ **分类偏差不是脚本分类器的问题，别去改 `collect_v2.py`**：`category` 既是 AI 字段，表格里存的就永远是飞书模型自己的判定（实测同一篇「Personal Agent 实测 + 提示语工程」被存成 `内容创作`，与脚本算的 `模型技术` 和人工判断都不同）。发现「分类跑偏」时先确认该列是不是 AI 字段，再向用户说明**要改的是飞书字段配置**（AI 字段换成普通单选，分类才由脚本说了算）；不要提议修改脚本分类器，更不要擅自改（用户要求改前先问）。
+
 ### IMA 知识库配置
 
 IMA OpenAPI 只支持 **URL 导入**（`/openapi/wiki/v1/import_urls`），不支持本地文件上传。IMA 无法解析 X/Twitter 页面（返回 ret_code 220001），代码中已自动排除 Twitter URL。支持的来源：公众号、飞书文档、通用网页等公网可访问 URL。
@@ -531,6 +533,12 @@ GLM 降级到规则提取时，微信文章正文开头常含作者行（`作者
 # 从 news-collect/.env 读取 DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL（回退 ~/.hermes/.env）
 # base_url: https://api.deepseek.com, model: deepseek-v4-flash
 ```
+
+### 作者字段单点瑕疵（正文正常，只有作者缺失或未解码）
+
+抓取到的标题、正文、摘要都正常，只有本地 md 的作者行出问题：`**作者**: 未知作者`（解析失败），或含未解码的 HTML 实体（`营销&amp;交易技术`，应为 `营销&交易技术`）。
+
+**处理**：不阻塞入库——表格 `source` 用公众号名兜底，飞书 / IMA 照常推送，在交付汇报里点一句即可。不要为单例瑕疵改抓取器（用户要求改前先问）；同类瑕疵连着出现多次时，把清单一次性报给用户，由用户决定是否修。
 
 ### 微信文章反爬（requests 抓取失败）
 
