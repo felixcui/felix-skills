@@ -657,7 +657,25 @@ YouTube 视频页面正文有限，`collect_v2.py` 抓取后 GLM 可能生成 0 
 
 **修复**：用 `lark-cli base +record-search --keyword "关键词" --search-field title --as user` 找到两条记录，删除空摘要的那条（`lark-cli base +record-delete --record-id <id> --yes --as user`）。保留有摘要的版本。
 
-**预防**：遇到 YouTube URL 且摘要为空时，不要用 `lark-cli base +record-batch-create` 补推，而是先搜索是否已有记录，如果有则用 `record-update` 更新 description 字段。
+**预防**：遇到 YouTube URL 且摘要为空时，不要用 `lark-cli base +record-batch-create` 补推，而是先搜索是否已有记录，有就改那条的 description —— 用 `lark-cli base +record-batch-update ... --json '{"update_records":{"<recID>":{"description":"新摘要"}}}'`（**没有 `+record-update` 这个子命令**，写了会报未知子命令）。
+
+### 摘要过薄（非空但没抓住重点）
+
+长文 / 工程长文被缩成一句话（实测约 60 字）、关键做法与数字全丢——**不是抓取失败**（正文完整、作者正常），是摘要 LLM 这一轮偷懒。
+
+**诊断**：与同批次其它文章的摘要长度对比，明显偏短才判定；正文长度正常但摘要 < ~80 字、且读不出"做了什么"即为过薄。
+
+**处理**：
+1. 重跑一次 `python3 scripts/collect_v2.py <URL>`（脚本自带降级链，可能换到另一个引擎就好了）
+2. 仍薄就人工补写摘要并**覆盖表格里那条记录**（不要新建记录，会变成同标题两条）：
+
+```bash
+lark-cli base +record-batch-update --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" \
+  --table-id "tblXp6DHjQPomXbv" --as user \
+  --json '{"update_records":{"<recID>":{"description":"补写的摘要"}}}'
+```
+
+3. 汇报时**点明「摘要偏薄」并给出补写版**，不要照抄脚本输出假装完整
 
 ### NotebookLM 上传失败（综合）
 
