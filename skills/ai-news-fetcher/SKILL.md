@@ -80,5 +80,7 @@ NEWS_OUTPUT_DIR=...
 - 微信发布需要 `baoyu-markdown-to-html` 和 `aicoding-news-weekly/scripts/wechat_api_client.py`。凭证、密钥等敏感信息只放在 `.env`，不要写入文档或提交到版本库。
 - 微信封面素材 ID 可能过期。若草稿接口报 `40007 invalid media_id`，重新上传封面后更新发布脚本默认素材 ID，或用 `--cover-image` / `--thumb-media-id` 指定封面。
 - 若微信报 `45166 invalid content hint`，检查资讯标题中的半角 `]` 是否破坏 Markdown 链接，修正后再创建草稿。
+- **模型报 400 / 429 时先探端点，不要改脚本里的模型名**：`.env` 的 `OPENAI_*` 才是分类与热点实际使用的模型（与 Hermes 运行时模型解耦，Hermes 切了模型这里不会自动跟着变）。看到 `HTTP 400 … supported API model names are …` 或 `429 … quota has been exhausted`，用一条最小 `/chat/completions` 请求分别打 `OPENAI_BASE_URL` 和 `DEEPSEEK_BASE_URL`，把 `OPENAI_*` 指到真正回话的端点（模型名与 Hermes 主模型一致；DeepSeek 官方端点接受 `enable_thinking:false`），探针通过后再跑发布脚本。
+- **补跑当天日报前先查两处，别直接重跑**：① `sqlite3 ~/.hermes/cron/executions.db "select scheduled_instant,started_at,status,error from executions where job_id='8935b4b3eda1' order by started_at desc limit 3;"` 拿失败原文（比翻 cron 输出准确）；② `draft/batchget` 确认当天草稿是否已存在——已存在就按 [references/wechat-draft-refresh.md](references/wechat-draft-refresh.md) 用 `draft/update` 原地刷新，重跑 `--create-draft` 会多出一份同标题草稿。
 - **`48001 api unauthorized`（freepublish / 已发布列表）是预期结果，不要修**：该号未授权群发接口，日报的终点就是微信公众号**草稿箱**，群发由用户在后台手动点；发布脚本天然只建草稿，不要为绕开它改造发布链路。
 - 获取失败时先检查 RSS 服务和网络；AI 分类或热点失败时查看脚本日志中的模型降级信息。
