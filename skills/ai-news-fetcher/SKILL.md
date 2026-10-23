@@ -35,6 +35,35 @@ python3 scripts/publish_to_wechat.py --create-draft --no-db
 
 发布脚本将 Markdown 保存为 `ai-news-YYYY-MM-DD.md`：可用 `NEWS_OUTPUT_DIR` 指定目录，默认是技能目录下的 `output/`。单独运行获取脚本时，Markdown 输出到标准输出；若配置了 `DEVELMASTER_API_KEY`，该命令也会尝试写入 DevMaster。发布脚本可用 `--no-db` 跳过入库。
 
+## 过滤公众号（EXCLUDED_BIZ_IDS）
+
+用户给一个数字 ID 要求「过滤这个号」时，改 `scripts/fetch_ai_news.py` 顶部的 `EXCLUDED_BIZ_IDS`：
+
+1. **按数值顺序插到对应位置**——集合是人工排序的，乱插下次没法核对哪几个是新加的。
+2. `biz_id` 是 RSS 源里的**数字字符串**（如 `3276214871` = 「长庆油田」），不是公众号 fakeid / base64；脚本取数与渲染两处都用 `str(item.get("biz_id",""))` 比较，直接塞字符串即可。
+3. 用真实 feed 验两件事：这个 ID 确实是那个号，且加完真的被剔除。注意 **`.env` 的 `AI_NEWS_API_BASE` 会覆盖脚本默认域**，别拿默认域名去试：
+
+```bash
+cd ~/.hermes/skills/felix-skills/skills/ai-news-fetcher
+K=$(grep '^AI_NEWS_API_KEY=' .env | cut -d= -f2)
+B=$(grep '^AI_NEWS_API_BASE=' .env | cut -d= -f2)
+curl -s "$B/api/query?k=$K&content=0&before=$(date +%Y%m%d)&after=$(date -v-3d +%Y%m%d)" -o /tmp/feed.json
+python3 - <<'PY'
+import importlib.util, json
+spec = importlib.util.spec_from_file_location("fan", "scripts/fetch_ai_news.py")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+items = json.load(open('/tmp/feed.json'))['data']
+new = "3276214871"   # 换成刚加的那条
+hit = [i for i in items if str(i.get('biz_id','')) == new]
+kept = [i for i in items if str(i.get('biz_id','')) not in m.EXCLUDED_BIZ_IDS]
+print("集合大小", len(m.EXCLUDED_BIZ_IDS), "| ID 在集合中", new in m.EXCLUDED_BIZ_IDS)
+print(f"过滤前 {len(items)} 条 → 过滤后 {len(kept)} 条")
+print("剩余中该号条数", sum(1 for i in kept if str(i.get('biz_id','')) == new), "| 该号是", {i.get('biz_name') for i in hit})
+PY
+```
+
+4. 改动**无需重启或重跑**，下一次 06:30 日报自动生效；汇报时给出「X 条 → Y 条」与命中的公众号名，证明改动真实生效。
+
 ## 汇总一段时间的热点（周报 / 月报）
 
 用户要「基于早报和收藏的内容，总结上周 / 最近 N 天的热点」时，从早报存档 + 收藏库取数再汇总；取数正则、组织顺序与坑点见 [references/weekly-rollup.md](references/weekly-rollup.md)。

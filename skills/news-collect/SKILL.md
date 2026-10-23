@@ -277,10 +277,14 @@ FEISHU_FIELDS = ["title", "link", "description", "source", "category", "updateti
 IMA OpenAPI 只支持 **URL 导入**（`/openapi/wiki/v1/import_urls`），不支持本地文件上传。IMA 无法解析 X/Twitter 页面（返回 ret_code 220001），代码中已自动排除 Twitter URL。支持的来源：公众号、飞书文档、通用网页等公网可访问 URL。
 
 ```python
-IMA_KB_ID = "AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ="
+IMA_KB_ID = "ima_kb_e7ouOFmL"
 IMA_CONFIG_PATH = Path.home() / ".config" / "ima"
 IMA_API_BASE = "https://ima.qq.com"
 ```
+
+> ⚠️ **KB ID 已换格式**：IMA 把知识库 ID 从 base64 串（`AGoC…=`）改成了 `ima_kb_xxx`。旧 ID 继续用会返回 `code:220004 invalid knowledge_base_id`——**这不是凭证问题**（凭证好的，空 urls 探针照样回 `code:51`）。查当前 ID：`POST /openapi/wiki/v1/search_knowledge_base`，body `{"query":"","cursor":"","limit":20}`（`query` 空串 = 列全部），取 `kb_id` / `kb_name`；「AI资讯」= `ima_kb_e7ouOFmL`。
+>
+> ⚠️ **失败信息会被日志淹掉**：`collect_v2.py` 只把 IMA 报错打在流程中段，用 `tail` 看结尾时经常看不到，结果 JSON 又照常输出，容易当成成功汇报。每次入库后要么单独看那一行，要么用上面的 import_urls 探针单跑一次看 `ret_code`；失败就手动补导（同一份 body，换正确 kb_id），别等用户发现。
 
 ## 参数说明
 
@@ -319,6 +323,14 @@ IMA_API_BASE = "https://ima.qq.com"
 ```bash
 lark-cli base +record-search --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" \
   --table-id "tblXp6DHjQPomXbv" --keyword "<完整标题>" --search-field title --as user
+```
+
+   刚写入的记录 `record-search` 可能**搜不到**（全文索引有延迟，新记录几分钟内关键词命中 0，别据此判定没建成）——按更新时间倒序取最新一条来核：
+
+```bash
+lark-cli base +record-list --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" \
+  --table-id "tblXp6DHjQPomXbv" --as user \
+  --sort-json '[{"field":"updatetime","desc":true}]' --limit 1
 ```
 
    确认 `count=1`（无重复记录），并用回读到的 category / source / updatetime 汇报。**`category` 是飞书 AI 字段**（见「飞书多维表格配置」），回读值与你算的不一致属于正常——一律用回读值，且**不说**「分类器跑偏 / 不稳定」，**不提议**改 `collect_v2.py`；真要调整分类口径，先确认字段类型，再问用户。**关键词是分词模糊匹配**：拆成短词（如「Agent 评测」）会命中一堆无关记录，必须用**标题原文连空格一起**才是唯一命中；少一个空格就查不到（`为什么我们需要Agent评测` → count=0），别据此判定记录没建成。
@@ -376,7 +388,7 @@ curl -s -X POST "https://ima.qq.com/openapi/wiki/v1/import_urls" \
   -H "Content-Type: application/json" \
   -H "ima-openapi-clientid: $(cat ~/.config/ima/client_id)" \
   -H "ima-openapi-apikey: $(cat ~/.config/ima/api_key)" \
-  -d '{"knowledge_base_id":"AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ=","urls":[]}'
+  -d '{"knowledge_base_id":"ima_kb_e7ouOFmL","urls":[]}'
 ```
 返回 `code:51`（URL 列表为空）= 认证正常。返回 `code:200002` = 凭证已过期，需用户重新获取 API Key 更新 `~/.config/ima/api_key`。
 
@@ -493,7 +505,7 @@ curl -s -X POST "https://ima.qq.com/openapi/wiki/v1/import_urls" \
   -H "Content-Type: application/json" \
   -H "ima-openapi-clientid: $(cat ~/.config/ima/client_id)" \
   -H "ima-openapi-apikey: $(cat ~/.config/ima/api_key)" \
-  -d '{"knowledge_base_id":"AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ=","urls":["<URL>"]}'
+  -d '{"knowledge_base_id":"ima_kb_e7ouOFmL","urls":["<URL>"]}'
 ```
 
 **③ 飞书多维表格推送（lark-cli）：**
@@ -605,7 +617,7 @@ curl -s -X POST "https://ima.qq.com/openapi/wiki/v1/import_urls" \
   -H "Content-Type: application/json" \
   -H "ima-openapi-clientid: $(cat ~/.config/ima/client_id)" \
   -H "ima-openapi-apikey: $(cat ~/.config/ima/api_key)" \
-  -d '{"knowledge_base_id":"AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ=","urls":[]}'
+  -d '{"knowledge_base_id":"ima_kb_e7ouOFmL","urls":[]}'
 ```
 返回 `code:51`（URL 列表不能为空）= 认证正常。返回 `code:200002` = header 名错误**或凭证过期**（`msg: "skill auth failed"`）。
 
@@ -627,7 +639,7 @@ curl -s -X POST "https://ima.qq.com/openapi/wiki/v1/import_urls" \
   -H "Content-Type: application/json" \
   -H "ima-openapi-clientid: $(cat ~/.config/ima/client_id)" \
   -H "ima-openapi-apikey: $(cat ~/.config/ima/api_key)" \
-  -d '{"knowledge_base_id":"AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ=","urls":["url1","url2",...]}'
+  -d '{"knowledge_base_id":"ima_kb_e7ouOFmL","urls":["url1","url2",...]}'
 ```
 
 返回每个 URL 的 `ret_code: 0` 表示成功。比逐条调用更高效。
