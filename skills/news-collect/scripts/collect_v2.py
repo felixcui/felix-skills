@@ -1089,9 +1089,134 @@ def upload_to_notebooklm(file_path, title, max_retries=3, retry_delay=3):
 
 # ============ 文章分类 ============
 
-def classify_article(title, summary=""):
-    """使用加权关键词规则对文章进行分类（9分类 + 其他）"""
+# 飞书多维表格 category 字段的合法选项（select，顺序与表内一致）
+CATEGORY_OPTIONS = [
+    "AI 算力", "模型技术", "Agent基建", "AI软件工程", "内容创作",
+    "个人生产力", "行业应用", "智能终端", "其他", "无匹配类别",
+]
+
+CLASSIFY_RUBRIC = """- AI 算力：芯片/GPU/数据中心/算力基础设施与成本
+- 模型技术：模型自身的发布、训练、架构、能力评测、技术报告
+- Agent基建：Agent 的工程底座与落地方法（框架、协议与工具调用、记忆、主动性、多智能体、安全护栏、技能市场）
+- AI软件工程：用 AI 写代码的工程实践（编码工具、研发流程、CI/CD、工程化、研发组织）
+- 内容创作：生成图像/视频/音频/文案的创作方法与工具
+- 个人生产力：个人效率与知识管理（笔记、搜索、办公、学习、个人自动化）
+- 行业应用：某行业/产业的落地或政策（政务、医疗、金融、教育、制造、文化传媒）
+- 智能终端：端侧设备（手机、眼镜、耳机、汽车、机器人、具身智能）
+- 其他：招聘、活动/沙龙/报名、纯商业融资新闻、与 AI 无关
+- 无匹配类别：确实判不准时用它，不要勉强归入上面任何一类"""
+
+def _load_llm_config():
+    """读取 skill .env 的主模型配置（与摘要生成同源）。返回 (api_key, base_url, model) 或 None"""
+    skill_env_path = Path(__file__).resolve().parent.parent / ".env"
+    api_key = ""
+    base_url = "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1"
+    model_name = "deepseek-v4.1-flash"
+    try:
+        if skill_env_path.exists():
+            for line in skill_env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                val = val.strip().strip('"').strip("'")
+                if key.strip() == "OPENAI_API_KEY":
+                    api_key = val
+                elif key.strip() == "OPENAI_BASE_URL":
+                    base_url = val or base_url
+                elif key.strip() == "OPENAI_MODEL":
+                    model_name = val or model_name
+    except Exception:
+        pass
+    if not api_key or api_key.startswith("***"):
+        return None
+    return (api_key, base_url, model_name)
+
+
+def _match_category(text):
+    """把模型输出对齐到合法选项（容忍空格/大小写/多余文字）；长选项优先，避免「其他」误吞"""
+    if not text:
+        return None
+    t_norm = text.strip().strip("\"'`。.,，").replace(" ", "").lower()
+    if not t_norm:
+        return None
+    for opt in sorted(CATEGORY_OPTIONS, key=len, reverse=True):
+        if opt.replace(" ", "").lower() in t_norm:
+            return opt
+    return None
+
+
+def classify_article_llm(title, summary="", content="", verbose=True):
+    """用主模型按「文章主体」判类；返回选项名，判不了/不可用返回 None（交给规则兜底）"""
+    cfg = _load_llm_config()
+    if not cfg:
+        if verbose:
+            print("   ⚠️ 主模型未配置，改用关键词规则判类")
+        return None
+
+    api_key, base_url, model_name = cfg
+    chat_url = base_url.rstrip("/")
+    if not chat_url.endswith("/chat/completions"):
+        chat_url = chat_url.rstrip("/") + "/chat/completions"
+
+    body = re.sub(r"\s+", " ", (content or "").strip())[:1200]
+    options_txt = "\n".join(f"- {o}" for o in CATEGORY_OPTIONS)
+    prompt = f"""你是资讯分类员。给下面这篇文章从固定选项里选一个分类。
+
+可选分类（必须原样输出其中之一，不要输出别的字）：
+{options_txt}
+
+判定标准（只看「文章主体是什么、想给读者什么」，不要因为文中顺带提到某个词就归到那一类）：
+{CLASSIFY_RUBRIC}
+
+标题：{title}
+摘要：{summary}
+正文开头：{body}
+
+分类："""
+
+    payload = {
+        "model": model_name,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 64,
+        "temperature": 0,
+    }
+    last_err = "未知错误"
+    # 推理模型优先关闭 thinking，端点不支持时回退重试
+    for extra in ({"enable_thinking": False}, {}):
+        try:
+            resp = requests.post(
+                chat_url,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=dict(payload, **extra),
+                timeout=45,
+            )
+        except Exception as e:
+            last_err = str(e)[:80]
+            continue
+        if resp.status_code != 200:
+            last_err = f"HTTP {resp.status_code}"
+            continue
+        try:
+            msg = resp.json()["choices"][0]["message"]
+            raw = (msg.get("content") or "").strip() or (msg.get("reasoning_content") or "").strip()
+        except Exception as e:
+            last_err = f"响应解析失败 {str(e)[:60]}"
+            continue
+        label = _match_category(raw)
+        if label:
+            return label
+        last_err = f"输出无法识别「{raw[:40]}」"
+
+    if verbose:
+        print(f"   ⚠️ 主模型判类失败({last_err})，改用关键词规则")
+    return None
+
+
+def classify_article_rules(title, summary=""):
+    """加权关键词规则（含 title 加权与分类累加）；不到阈值时返回「无匹配类别」"""
     text = f"{title} {summary}".lower()
+    title_lower = title.lower()
 
     # 非AI内容 → 直接返回"其他"
     non_ai_kw = ["招聘", "诚聘", "招贤", "加入我们", "简历", "直播预告", "预告", "倒计时"]
@@ -1169,14 +1294,24 @@ def classify_article(title, summary=""):
 
     best_cat = None
     best_weight = 0
+    scores = {}
     for cat, keywords in rules:
+        sc = 0
         for kw, weight in keywords:
-            if kw in text:
-                if weight > best_weight:
-                    best_weight = weight
-                    best_cat = cat
+            k = kw.lower()
+            if k in title_lower:
+                sc += weight * 3      # 标题命中的信号强度远高于摘要
+            elif k in text:
+                sc += weight
+        if sc:
+            scores[cat] = sc
+    if scores:
+        for cat, sc in scores.items():
+            if sc > best_weight:
+                best_weight = sc
+                best_cat = cat
 
-    if best_cat:
+    if best_cat and best_weight >= 8:
         return best_cat
 
     # 兜底启发式
@@ -1195,7 +1330,23 @@ def classify_article(title, summary=""):
         if any(k in text for k in kws):
             return cat
 
-    return "其他"
+    # 规则也判不出来：按口径返回「无匹配类别」，不硬塞 AI软件工程
+    return "无匹配类别"
+
+
+def classify_article(title, summary="", content=""):
+    """文章分类：先排除非AI/活动稿 → 主模型按「文章主体」判类 → 失败用加权规则兜底"""
+    text = f"{title} {summary}".lower()
+
+    # 非AI内容 → 直接返回"其他"
+    non_ai_kw = ["招聘", "诚聘", "招贤", "加入我们", "简历", "直播预告", "预告", "倒计时"]
+    if any(kw in title for kw in non_ai_kw):
+        return "其他"
+
+    label = classify_article_llm(title, summary, content)
+    if label:
+        return label
+    return classify_article_rules(title, summary)
 
 
 def push_to_feishu(url, title, summary, author="", webhook_url=None, category="其他"):
@@ -1400,10 +1551,10 @@ def main():
                 print("⚠️ NotebookLM 上传失败，但继续其他操作")
     
     # 5. 推送到飞书多维表格
+    category = classify_article(data['title'], summary, data.get('content', ''))
     if not args.no_push:
         print("\n[5/5] 推送到飞书多维表格...")
         source_name = data.get('source_name', '')
-        category = classify_article(data['title'], summary)
         print(f"   🏷️  分类: {category}")
         success, response = push_to_feishu(
             args.url,
@@ -1436,7 +1587,7 @@ def main():
         "title": data['title'],
         "author": data.get('author', ''),
         "summary": summary,
-        "category": classify_article(data['title'], summary),
+        "category": category,
         "raw_markdown_path": str(raw_path),
         "notebooklm": args.notebook
     }
