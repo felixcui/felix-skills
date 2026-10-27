@@ -45,7 +45,7 @@ Cron job_id: `60bbd91f0554`，每日 21:00 执行。详细操作见下方各子�
 | 项目 | 值 |
 |------|-----|
 | Notebook ID (V3) | `b08626a7-cda5-4dd2-b0e7-536eafb48274` |
-| IMA KB ID | `AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ=` |
+| IMA KB ID | `ima_kb_e7ouOFmL`（旧 base64 串已失效，见 `references/ima-maintenance.md`） |
 | Wiki 仓库 | `~/wiki` |
 | Raw 目录 | `/Users/felix/work/github/media-conent/raw` |
 | CLI 路径 | `/opt/homebrew/bin/python3.14 -m notebooklm` |

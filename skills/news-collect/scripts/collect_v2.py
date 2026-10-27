@@ -28,7 +28,9 @@ NOTEBOOK_ID = "b08626a7-cda5-4dd2-b0e7-536eafb48274"
 
 # IMA 知识库配置
 IMA_KB_ENABLED = True
-IMA_KB_ID = "AGoC5oEY8FP12VotR1kff00HlmJyh3RP6Do9vCGKpGQ="
+# IMA 于 2026-10 换了 ID 格式：旧 base64 串（AGoC…=）已失效，用它会返回 code:220004 invalid knowledge_base_id
+# 现行格式 ima_kb_XXXXXXXX；「AI资讯」= ima_kb_e7ouOFmL（查法见 references/ima-maintenance.md）
+IMA_KB_ID = "ima_kb_e7ouOFmL"
 IMA_CONFIG_PATH = Path.home() / ".config" / "ima"
 IMA_API_BASE = "https://ima.qq.com"
 
@@ -1271,13 +1273,15 @@ def add_to_ima_kb(url):
     
     if result.get('code') == 0:
         results = result.get('data', {}).get('results', {})
+        if not results:
+            print("   ❌ IMA 入库异常：返回 code=0 但没有结果，请人工核对")
         for item in results.values():
             if item.get('ret_code') == 0:
                 print("   ✅ 已添加到 IMA「AI资讯」知识库")
             else:
-                print(f"   ⚠️ 添加失败: {item.get('errmsg', '未知错误')}")
+                print(f"   ❌ IMA 入库失败: ret_code={item.get('ret_code')} {item.get('errmsg', '未知错误')}")
     else:
-        print(f"   ⚠️ API 错误: {result.get('msg', '未知错误')}")
+        print(f"   ❌ IMA 入库失败(code={result.get('code')}): {result.get('msg', '未知错误')} —— 需人工补导，ID 与查法见 references/ima-maintenance.md")
 
 
 # ============ Markdown 生成 ============
