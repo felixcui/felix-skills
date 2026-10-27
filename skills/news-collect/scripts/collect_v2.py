@@ -6,6 +6,7 @@ News Collect V2 简化版 - 支持上传到 NotebookLM
 import sys
 import re
 import json
+import html
 import urllib.request
 import urllib.parse
 import argparse
@@ -194,8 +195,11 @@ def _parse_baoyu_output(output, url):
             body = parts[2].strip()
 
     title = metadata.get("title") or ""
-    author = metadata.get("author") or ""
-    source_name = metadata.get("siteName") or author
+    raw_author = metadata.get("author") or ""
+    source_name = metadata.get("siteName") or ""
+    author = normalize_author(raw_author, fallback=source_name or "未知作者")
+    if not source_name:
+        source_name = author
 
     # 检测是否被验证码拦截（标题为"微信公众平台"或内容过短）
     if title == "微信公众平台" or len(body) < 100:
@@ -302,10 +306,11 @@ def fetch_wechat_article_defuddle(url):
         source_name = data.get("site_name") or ""
         if not source_name:
             source_name = fetch_wechat_account_name(url)
+        author = normalize_author(data.get("author"), fallback=source_name or "未知作者")
         
         return {
             "title": title,
-            "author": data.get("author") or "未知作者",
+            "author": author,
             "source_name": source_name,
             "publish_time": data.get("published") or "",
             "content": content,
@@ -406,6 +411,38 @@ def fetch_generic_article(url):
 
 
 TWITTER_CLI = "/Users/felix/.local/bin/twitter"
+
+
+# 作者名里出现的这些词 = 页面上的按钮/引导文案被误当成了作者（如「点这里关注→」「未知作者」）
+AUTHOR_NOISE_PATTERNS = (
+    "关注", "点击", "长按", "扫码", "阅读原文", "预览", "标签不可点", "分享", "收藏",
+    "点赞", "在看", "投稿", "转载", "登录", "打开", "查看全文", "更多",
+    "未知作者", "未知", "微信公众平台", "公众号", "→", "->",
+)
+
+
+def normalize_author(raw, fallback="未知作者"):
+    """清洗作者名：解码 HTML 实体 → 去掉引导/按钮噪声 → 取不到就用 fallback（一般是公众号名）。
+
+    抓取端的 author 字段不可信：defuddle/baoyu 有时会把「点这里关注→」这类
+    按钮文案当成作者名，也会把 `&amp;` 之类实体原样带出来。作者名是给人看的，
+    宁可回退成公众号名，也不要写脏值进飞书表格和本地 md。
+    """
+    name = html.unescape(str(raw or "")).strip()
+    fb = html.unescape(str(fallback or "")).strip()
+    # 兜底值本身也可能是脏的（如页面只给了「微信公众平台」），这时候宁可写「未知作者」
+    if not fb or any(p.lower() in fb.lower() for p in AUTHOR_NOISE_PATTERNS):
+        fb = "未知作者"
+    name = re.sub(r"^(作者|文|文/|By|by)\s*[:：/]\s*", "", name).strip()
+    name = name.strip(" \t　|·-—>→")
+    if not name or len(name) > 30:
+        return fb
+    low = name.lower()
+    if any(p.lower() in low for p in AUTHOR_NOISE_PATTERNS):
+        return fb
+    if not re.search(r"[\u4e00-\u9fffA-Za-z0-9]", name):
+        return fb
+    return name
 
 
 def _parse_twitter_timestamp(ts_str):
