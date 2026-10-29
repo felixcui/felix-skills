@@ -356,7 +356,7 @@ lark-cli base +record-list --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" \
 
 **用户定的粒度：结论 + 要点，整条 3~6 行**（他明确抱怨过「对话里显示太多、占屏幕空间」）。一次处理完只回一段，按这个顺序（飞书**不支持 markdown 表格渲染**，用 emoji + 加粗列表，不要贴表格）：
 
-1. **标题 + 完整 URL**——X/Twitter 链接必须给 `https://x.com/<user>/status/<id>` 全式（短链带 `?s=46` 时先去掉再抓）
+1. **标题**——只写标题，**不附文章链接**（用户 2026-10-29 明确要求：入库回执的飞书消息里不要再出现链接。链接只落表格 `link` 字段与本地 md 的 frontmatter，不在聊天里重复）
 2. **摘要**：3~6 行，留住关键数字、做法、结论；脚本摘要偏薄就补写，并把补写版回填表格 `description`
 3. **表格事实**：`record id` / `source` / `category`（回读值）/ `updatetime`
 4. **本地 md 路径 + IMA 状态**（`ret_code`）
