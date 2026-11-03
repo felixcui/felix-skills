@@ -370,6 +370,29 @@ lark-cli base +record-list --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" \
 >
 > ⚠️ **用户说「这个没收集 / 这个没处理」时，先定位他指的是哪条消息，再核实，别重复入库**：他往往是**回复**某条旧消息说的，消息 id 就在你收到的这条上。取被回复的那条：`lark-cli im +messages-mget --message-id "<本条消息 id>" --as user` → 返回里的 `reply_to` 即被回复消息的 id → 再 mget 那个 id，拿到其中的链接。核实两处：表格用 `+record-list --sort-json '[{"field":"updatetime","desc":true}]' --limit 5` 看最近几条；IMA 用 `get_knowledge_list`（body `{"knowledge_base_id":"ima_kb_e7ouOFmL","cursor":"","limit":20}`）列表。**两处都有 = 已入库但漏了回执，如实说明并补回执；确实缺才重跑脚本**。
 
+### 检索历史入库文章（回答「之前收过关于 X 的文章」）
+
+用户问「之前收集的文章里有没有关于 X 的」「最近一个月关于 Y 的文章」时，别去全文搜本地 `raw/`，直接查飞书表——它是唯一的索引层。
+
+```bash
+# 1) 全量导出为 ndjson（markdown 格式 --limit 上限 200，ndjson 可到 2000）
+lark-cli base +record-list --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" \
+  --table-id "tblXp6DHjQPomXbv" --as user --limit 2000 \
+  --sort-json '[{"field":"updatetime","desc":true}]' \
+  --format ndjson --output ./allrec.ndjson --overwrite
+
+# 2) 用 Python 按日期切片 + 多关键词匹配 title/description
+#    row 字段：title / description / link / source / category / updatetime / record_id
+```
+
+要点：
+
+- **关键词要覆盖同义词与英文**：问「数学」时同时试 `数学|定理|证明|Lean|形式化|猜想|IMO|奥数|AlphaProof`，只搜一个词会漏一半。
+- **短词会误命中**：「证明」也会命中「交付流程证明」「验证」类文章，命中后读 `description` 再筛，别直接当结果汇报。
+- **先报覆盖范围再报命中**：「近一个月共 187 条，命中 5 篇」比只丢 5 个标题可信；`oldest` 字段能告诉你 2000 条覆盖到哪一天，超出范围要按 `--offset` 分页。
+- **召回后按主题归堆而不是按时间堆叠**：分「平台侧进展 / 组织侧动作 / 工程外溢 / 产业判断」这类线，再给时间线，用户才能看出趋势。
+- **用户追问「发我链接」再从 `link` 字段批量取**（回执不带链接，是本技能的默认口径）。
+
 ### 摘要引擎三级降级链
 
 降级顺序：**GLM → deepseek-v4-flash → 规则摘要**。每个 LLM 超时 60 秒。
