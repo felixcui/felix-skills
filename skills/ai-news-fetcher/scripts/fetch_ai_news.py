@@ -134,7 +134,7 @@ DEVELMASTER_API_KEY = os.getenv("DEVELMASTER_API_KEY", "")
 
 # RSS API 配置
 RSS_API_KEY = os.getenv("AI_NEWS_API_KEY", "5O5H1c1NsT")
-RSS_API_BASE = os.getenv("AI_NEWS_API_BASE", "https://wexinrss.zeabur.app")
+RSS_API_BASE = os.getenv("AI_NEWS_API_BASE", "http://59.110.150.199:8081")
 # 修复末尾斜杠导致 404 的问题
 RSS_API_BASE = RSS_API_BASE.rstrip('/')
 
