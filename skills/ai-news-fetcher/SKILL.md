@@ -115,6 +115,8 @@ NEWS_OUTPUT_DIR=...
 
 若主模型未配置或不可用，分类会尝试备用模型，再回退到脚本内置规则；热点总结只使用已配置的 AI 服务，失败时省略热点，不使用关键词兜底。RSS 地址末尾的斜杠由脚本处理。DeepSeek 密钥也可从 `~/.hermes/.env` 读取。
 
+> **资讯源迁移（2026-11-04）**：抓取服务从 `http://8.130.209.77:8081` 迁到 **`http://59.110.150.199:8081`**。旧 IP 现在直接返回空响应（`curl: (52) Empty reply from server`），脚本会表现为「0 条资讯 / 日报为空」。**排查顺序**：先 `curl -sS -m 10 -o /dev/null -w '%{http_code}' http://59.110.150.199:8081/` 确认服务在，再 `python3 -c "import fetch_ai_news as f; print(len(f.get_raw_news(1)))"` 看抓取条数；`.env` 与脚本内置默认值都指向新地址，换 IP 时两处都要改。
+
 ## 发布依赖与故障处理
 
 - 微信发布需要 `baoyu-markdown-to-html` 和 `aicoding-news-weekly/scripts/wechat_api_client.py`。凭证、密钥等敏感信息只放在 `.env`，不要写入文档或提交到版本库。
