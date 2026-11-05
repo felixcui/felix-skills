@@ -225,6 +225,7 @@ python3 scripts/collect_v2.py <URL> --output-dir ~/Desktop/my_news
 | Twitter/X 推文 | ✅ | 标题、作者、正文、互动数据 | ✅ | ❌ |
 | X Article 长文 | ✅ | 完整长文标题、正文、作者、互动数据 | ✅ | ❌ |
 | 飞书文档 | ✅ | 标题、正文 | ✅ | ✅ |
+| GitHub 仓库 | ⚠️ 半支持 | 页面标题、README；**星标/许可/语言要另取 API** | ✅ | ✅ |
 | 微信视频号（`weixin.qq.com/sph/…`） | ⚠️ 半支持 | 作者、帖子文案；**标题拿不到** | — | ✅ |
 
 > ⚠️ IMA 无法解析 X/Twitter 页面（返回 ret_code 220001），Twitter 相关 URL 已自动跳过 IMA 导入。
@@ -364,7 +365,7 @@ lark-cli base +record-list --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" \
 
 > ⚠️ **回执里不写 `record_id` / `source` / `category` / `updatetime`**（用户 2026-10-30 明确要求，示例如「📌 record_id / 📰 source / 🕗 updatetime」这类清单全部去掉）。这些事实仍然要**回读核对**，只是不往聊天里贴——需要时用户会追问。
 
-> ⚠️ **同一事件被多个公众号写，不是重复入库**：不同账号的解读角度不同（一个讲概念、一个讲上手），各入库一条，但回执里点一句「这是该事件的第 N 篇（前一篇是谁家/什么角度）」；只有**标题与正文几乎相同的转载、洗稿**才跳过不入库。跨源去重是日报汇总阶段的动作，入库阶段不做。
+> ⚠️ **同一事件被多个公众号写，不是重复入库**：不同账号的解读角度不同（一个讲概念、一个讲上手），各入库一条，但回执里点一句「这是该事件的第 N 篇（前一篇是谁家/什么角度）」；只有**标题与正文几乎相同的转载、洗稿**才跳过不入库；**同一作者、同一系统的后续篇（开源、复盘、下篇）不算重复**，各入库一条并在回执写「第 N 篇（前一篇角度是 X）」。跨源去重是日报汇总阶段的动作，入库阶段不做。
 
 别写「正文已保存」这类无信息量的句子。摘要段吃掉大半预算时，把「与你相关的点」压成一句或直接省略，**不要把回执撑成一篇报告**；清单/合集类文章在第 2 条里紧凑列条目。
 
@@ -470,6 +471,17 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 
 ## 常见问题与解决方案
 
+### GitHub 仓库链接：脚本抓到的标题、作者不可用
+
+`collect_v2.py` 把仓库页当普通网页抓，结果是 `title = "GitHub - owner/repo: <英文描述> · GitHub"`、`author` 为空、`source` 落 `Github`，摘要也读不出星标/许可证/支持范围。**入库后必须改写**，否则表里会攒一堆英文长标题。
+
+1. 取元数据：`curl -sS https://api.github.com/repos/<owner>/<repo>` → `description` / `stargazers_count` / `language` / `license.spdx_id` / `default_branch`
+2. 取 README：`curl -sS https://raw.githubusercontent.com/<owner>/<repo>/<default_branch>/README.md | head -120`
+3. 重写三处：`title` 用「中文可读名：一句话定位（开源·语言）」；`source` 用 `owner`；`description` 写「定位 + 2–4 条能力 + 关键设计 + 部署形态/许可证」——**能力条数比形容词有用**，把支持的工具名、协议名、硬数字列出来
+4. 同步本地 md 的 `#` 标题、`**作者**` 与 `## 摘要`，再 `+record-batch-update` 覆盖 title/source/description，回读确认
+
+**判据**：README 里有「为什么需要它 / 和 X 的区别 / 快速开始」三段，就是可入库的产品级仓库；只有 LICENSE 或空 README 的不入库。**分类**：管理/可视化/网关这类「工具链层」归 `Agent基建`，不要因为 README 提到模型就归 `模型技术`。
+
 ### SPA / Web 应用产品页导致摘要为空或无效
 
 当 URL 指向 SPA（单页应用）或 Web 应用产品页（如 SaaS 工具首页）而非文章时，`collect_v2.py` 抓取到的内容只有 UI 元素文本（按钮、标签、导航等），没有实质性文章正文。GLM 和 deepseek-v4-flash 通常返回极短或无效摘要（如"。"），规则引擎也会产出噪声。
@@ -552,7 +564,15 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 
 **注意**：`--summary-engine rule` 无法绕过此问题，因为失败发生在抓取阶段而非摘要阶段。
 
-**修复流程**（浏览器辅助抓取）：
+**首选：curl 落盘 + 解析 `#js_content`**（比开浏览器快，也不占 bsk 会话）
+
+1. `curl -sS -m 30 -A '<桌面 Chrome UA>' "<URL>" -o /tmp/art.html`，即使 6MB 也能拿到
+2. 标题取 `property="og:title"` 的 content
+3. 正文从 `id="js_content"` 起截一段，`<br>`/`</p>`/`</h*>` 转换行、去标签、`html.unescape` 即得纯文本（一次能出 1 万字以上）
+4. 作者常仍为空（无登录态页面不给 `js_name`）：用正文里的「文｜XXX」「XXX 技术团队」署名行兜底
+5. 后续按「手动构建 Markdown → `+record-batch-create` → IMA import_urls」走，不要新建重复记录
+
+**备选：浏览器辅助抓取**（curl 也拿不到正文时）
 1. 用 `browser_navigate` 打开文章 URL
 2. 用 `browser_snapshot(full=True)` 获取完整页面快照
 3. 从快照中提取标题、作者、正文
@@ -779,9 +799,13 @@ YouTube 视频页面正文有限，`collect_v2.py` 抓取后 GLM 可能生成 0 
 
 **处理**：
 1. 重跑一次 `python3 scripts/collect_v2.py <URL>`（脚本自带降级链，可能换到另一个引擎就好了）
-2. 仍薄就读本地 md 的 `## 正文` 重写摘要，**两处一起改**（只改表格会让 md 与表长期不一致，下次检索对不上）：
-   - 本地 md：`patch` 掉 `## 摘要` 与下一条 `---` 之间的整段
-   - 表格：先拿 recID —— `lark-cli base +record-search --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" --table-id "tblXp6DHjQPomXbv" --keyword "<标题片段>" --search-field title --as user`（没有 `--query` 这个 flag，写了会报 unknown flag）——再覆盖那条记录（不要新建，会变成同标题两条）：
+2. 仍薄就读本地 md 的 `## 正文` 重写摘要，**两处一起改**（只改表格会让 md 与表长期不一致，下次检索对不上）：本地 md 用 `patch` 替换 `## 摘要` 与下一条 `---` 之间的整段。
+
+> ⚠️ **微信抓取经常丢章节标题**：md 里只剩 `## 01`…`## 07`，甚至整篇只有一个 `## 正文`。**不要靠 headings 判断文章结构**，直接扫正文段落抓「机制名 + 硬数字」；补写后的摘要必须能回答「怎么做的、效果多少」，不能停在「比较了三种方式」这种无信息句。
+
+3. 表格：先拿 recID —— `lark-cli base +record-search --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" --table-id "tblXp6DHjQPomXbv" --keyword "<标题片段>" --search-field title --as user`（没有 `--query` 这个 flag，写了会报 unknown flag）——再覆盖那条记录（不要新建，会变成同标题两条）。**record-search 返回 count=0 不代表没入库**（索引延迟 + 分词匹配），改用 `+record-list --sort-json '[{"field":"updatetime","desc":true}]' --limit 5`，**逐条比对 title、确认就是你要改的那篇再取 recID**；不要因为 search 空就重跑脚本重复入库。
+
+> ⚠️ **绝不能拿「最新一条」当「刚写的那条」**：`--limit 1` 只按 updatetime 排序，刚写入的记录排序可能滞后，取到的往往还是上一篇。用它去 `+record-batch-update` 会**把上一篇的 description 覆盖成本篇内容**（本会话真实发生过，事后要两条都修）。规则：**标题不匹配就不写**；批量更新时用 `update_records` 一次带多个 recID，写完逐条回读 title/description 核对。
 
 > ⚠️ **从 record-search 输出里取 recID 用正则，不要按行号 `sed -n`**：输出前面会多出一行 `_record_id is metadata for record operations...` 的说明，表头行号随查询漂移，`sed -n '3p'` / `'5p'` 取到的是表头或分隔线。用 `re.search(r'rec[A-Za-z0-9]{8,}', stdout)` 一次拿到。
 
