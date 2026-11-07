@@ -484,7 +484,17 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 3. 重写三处：`title` 用「中文可读名：一句话定位（开源·语言）」；`source` 用 `owner`；`description` 写「定位 + 2–4 条能力 + 关键设计 + 部署形态/许可证」——**能力条数比形容词有用**，把支持的工具名、协议名、硬数字列出来
 4. 同步本地 md 的 `#` 标题、`**作者**` 与 `## 摘要`，再 `+record-batch-update` 覆盖 title/source/description，回读确认
 
-**判据**：README 里有「为什么需要它 / 和 X 的区别 / 快速开始」三段，就是可入库的产品级仓库；只有 LICENSE 或空 README 的不入库。**分类**：管理/可视化/网关这类「工具链层」归 `Agent基建`，不要因为 README 提到模型就归 `模型技术`。
+### 非微信站点（技术博客 / 公司官网）抓不到正文
+
+`tech.meituan.com`、`engineering.<company>.com` 这类 JS/SSR 渲染的站点，`collect_v2.py` 只能拿到 `<title>`：结果 JSON 里 `"summary": ""`，本地 md 不足 1KB（`## 正文` 下面空着），但**照样会推送一条只有标题的记录**。
+
+**处理（不要重跑脚本，也别开浏览器）**：
+
+1. `web_extract([url], char_limit=80000)` 取 markdown 正文——这类站点通常能完整取回，比浏览器快且不占会话
+2. 重写本地 md：`#` 标题去掉站点名后缀（如 `| 美团 · 技术团队`），`## 正文` 换成 web_extract 的内容
+3. 按正文重写摘要；**图里的分数不要猜**——正文没给数字就在摘要里写明「具体分数只在图里，正文未给文字数字」
+4. `+record-batch-update` 改那条**已有**记录（title/description/source）并回读。⚠️ 表里没有 `author` 字段，payload 带 `author` 会整条 `ok:false`，作者只写进本地 md 的 `**作者**` 行
+5. 脚本一般已把 URL 交给 IMA；要确认就再调一次 `import_urls` 看 `ret_code`（重复导入无害）
 
 ### SPA / Web 应用产品页导致摘要为空或无效
 
@@ -499,8 +509,9 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 1. 用 `browser_navigate` 打开 URL，`browser_snapshot(full=true)` 获取页面信息和功能描述
 2. 结合页面标题、标语、功能列表、UI 文本等手动撰写产品介绍式摘要
 3. 用 `patch` 工具更新本地 Markdown 文件（`~/work/github/media-conent/raw/` 下对应文件）的摘要和正文
-4. 用 `lark-cli base +record-batch-create` 补推带正确摘要的记录到飞书多维表格
-5. **告知用户**：自动流程已推送一条空摘要记录，表格中会有两条重复记录，由用户决定是否清理空摘要那条
+4. **改同一条记录，不要新建**：空摘要那条已经写进表里了，再 `+record-batch-create` 会变成同标题两条。用 `+record-list --sort-json '[{"field":"updatetime","desc":true}]' --limit 5` 找到**标题完全一致**的那条的 recID，`+record-batch-update` 覆盖 title/description/source
+5. 若连正文也空（见下方「非微信站点」），先把正文补进本地 md，摘要才有依据
+6. **告知用户**：说明原记录是空的、已就地补全，现在只有一条
 
 **预防**（未来可加到 `collect_v2.py`）：检测原始正文 < 100 字符且摘要无效时，标记为非文章页面并提示 agent 手动处理，而非静默推送空摘要。
 
@@ -567,6 +578,8 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 **诊断信号**：`collect_v2.py` 在 `[1/5] 抓取内容...` 阶段失败，错误信息含 `Page too large`。
 
 **注意**：`--summary-engine rule` 无法绕过此问题，因为失败发生在抓取阶段而非摘要阶段。
+
+**看到 `Page too large` 就手工走下面这条 curl 路径，不要重跑脚本让它自己降级**：脚本的下一跳是 baoyu-fetch，6MB 级页面会在交互模式里起一个 Chrome 然后崩（`undefined is not an object (evaluating 'bgValues.length')`），白等一两分钟还得不到正文。
 
 **首选：curl 落盘 + 解析 `#js_content`**（比开浏览器快，也不占 bsk 会话）
 
