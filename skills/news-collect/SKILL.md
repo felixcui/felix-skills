@@ -529,8 +529,8 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 2. 注意 SPA 页面可能有模态弹窗遮挡交互，需先通过 `browser_console` 隐藏或关闭
 3. 结合页面标题、标语、功能列表、UI 文本等手动撰写产品介绍式摘要
 4. 用 `patch` 工具更新本地 Markdown 文件（`~/work/github/media-conent/raw/` 下对应文件）的摘要和正文
-5. 用 `lark-cli base +record-batch-create` 补推带正确摘要的记录到飞书多维表格
-6. **告知用户**：自动流程已推送一条空/无效摘要记录，表格中会有两条重复记录，由用户决定是否清理
+5. **改同一条记录，不要新建**：空摘要那条已经写进表里了，再用 `+record-batch-create` 会变成同标题两条。用 `+record-list --sort-json '[{"field":"updatetime","desc":true}]' --limit 5` 找到**标题完全一致**的那条取 recID，`+record-batch-update` 覆盖 title/description/source
+6. **告知用户**：原记录是空的、已就地补全，现在只有一条
 
 **预防**（未来可加到 `collect_v2.py`）：检测原始正文 < 100 字符且摘要无效时，标记为非文章页面并提示 agent 手动处理，而非静默推送空摘要。
 
