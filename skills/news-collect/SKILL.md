@@ -475,6 +475,19 @@ curl -s "$(grep 'base_url' ~/.hermes/config.yaml | head -1 | awk '{print $2}')/c
 
 ## 常见问题与解决方案
 
+### 文件名含非法字符导致保存 / 同步失败
+
+标题里的 `\ / : * ? " < > |` 会原样写进文件名，在 Windows、NAS、网盘同步或「另存为」时报「文件名或路径不能包含特殊字符」。`collect_v2.py` 的 `sanitize_filename()` 已统一处理：可读符号换全角（`： ？ ｜ 〈 〉 ＊ ／ ＼`），双引号直接删，控制字符/首尾空格/结尾句点去掉，Windows 保留名（CON、PRN、COM1…）加下划线前缀。
+
+**历史文件不会自己改名**，需要时跑一次（只改非法字符与结尾句点，保留空格，避免整库改名）：
+
+```bash
+python3 scripts/fix_raw_filenames.py            # 预览
+python3 scripts/fix_raw_filenames.py --apply    # 执行
+```
+
+改名不影响飞书记录——多维表格里不存本地路径，回执里的「本地 md 已存」按文件名说即可。
+
 ### GitHub 仓库链接：脚本抓到的标题、作者不可用
 
 `collect_v2.py` 把仓库页当普通网页抓，结果是 `title = "GitHub - owner/repo: <英文描述> · GitHub"`、`author` 为空、`source` 落 `Github`，摘要也读不出星标/许可证/支持范围。**入库后必须改写**，否则表里会攒一堆英文长标题。
@@ -816,7 +829,11 @@ YouTube 视频页面正文有限，`collect_v2.py` 抓取后 GLM 可能生成 0 
 
 **处理**：
 1. 重跑一次 `python3 scripts/collect_v2.py <URL>`（脚本自带降级链，可能换到另一个引擎就好了）
-2. 仍薄就读本地 md 的 `## 正文` 重写摘要，**两处一起改**（只改表格会让 md 与表长期不一致，下次检索对不上）：本地 md 用 `patch` 替换 `## 摘要` 与下一条 `---` 之间的整段。
+2. 仍薄就读本地 md 的 `## 正文` 重写摘要，**两处一起改**（只改表格会让 md 与表长期不一致，下次检索对不上）：本地 md 用 `patch` 替换 `## 摘要` 与下一条 `---` 之间的整段，批量重写时用这个定位（`count=1` 只动摘要段，不碰正文里的 `---`）：
+
+   ```python
+   s = re.sub(r'## 摘要\n\n.*?\n\n---', '## 摘要\n\n' + new_summary + '\n\n---', s, count=1, flags=re.S)
+   ```
 
 > ⚠️ **微信抓取经常丢章节标题**：md 里只剩 `## 01`…`## 07`，甚至整篇只有一个 `## 正文`。**不要靠 headings 判断文章结构**，直接扫正文段落抓「机制名 + 硬数字」；补写后的摘要必须能回答「怎么做的、效果多少」，不能停在「比较了三种方式」这种无信息句。
 
@@ -935,6 +952,7 @@ news-collect/
 └── scripts/
     ├── collect_v2.py            # ⭐ V2 主脚本（增强版）
     ├── eval_classify.py          # 分类回放自检（表内分类 vs 新判定对照）
+    ├── fix_raw_filenames.py     # 清理 raw/ 历史文件名的非法字符（默认预览，--apply 执行）
     ├── fetch_feishu_wiki.py     # 飞书 Wiki 抓取辅助
     └── fetch_content.py          # 旧版（保留兼容）
 ```

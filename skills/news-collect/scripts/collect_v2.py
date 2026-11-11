@@ -1491,11 +1491,25 @@ def create_markdown_content(title, author, url, summary, content):
 
 
 
+_FILENAME_MAP = {
+    '\\': '＼', '/': '／', ':': '：', '*': '＊', '?': '？',
+    '<': '〈', '>': '〉', '|': '｜', '"': '',
+}
+_WIN_RESERVED = {'CON', 'PRN', 'AUX', 'NUL'} | {f'COM{i}' for i in range(1, 10)} | {f'LPT{i}' for i in range(1, 10)}
+
+
 def sanitize_filename(text):
-    """清理文件名中的特殊字符。"""
-    text = re.sub(r'[\/:*?"<>|]+', '', text)
-    text = re.sub(r'\s+', '', text).strip()
-    text = re.sub(r'[\x00-\x1f]+', '', text)
+    """清理文件名中的非法字符（Windows/macOS 通行的 \\ / : * ? " < > |）。
+
+    可读的符号换成全角等价物（：？｜〈〉），双引号直接删掉（成对出现时
+    换成全角反而更难看）；控制字符、首尾空格与结尾句点一并去掉，
+    避免在不同系统间拷贝或同步时保存失败。
+    """
+    text = ''.join(_FILENAME_MAP[ch] if ch in _FILENAME_MAP else ch for ch in text)
+    text = re.sub(r'[\x00-\x1f\x7f]+', '', text)
+    text = re.sub(r'\s+', '', text).strip(' .')
+    if text.upper() in _WIN_RESERVED:
+        text = f'_{text}'
     return text
 
 
