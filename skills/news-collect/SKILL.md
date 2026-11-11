@@ -355,6 +355,8 @@ lark-cli base +record-list --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" \
 
    ⚠️ **刚写完立刻回读可能还是旧值**（读写传播延迟）：`+record-batch-update` 返回 `ok: true`、紧接着 `record-list` 却仍是改前的 title/category，这是延迟不是失败——等 2~3 秒再读一次。别据旧值重发一次写请求，那会让汇报自相矛盾（同一字段改两遍）。**`category` 现在完全由脚本判定**（主模型 + 规则兜底，2026-10-27 起；字段已是普通 select，不再有飞书重算覆盖）——所以回读值与脚本日志不一致时，**先查是不是传播延迟**，别归因到「飞书 AI 字段」这个已作废的说法。分类与文章主题明显不符就是真判错，一句话点出并给建议值，能判定的直接改、回读。**关键词是分词模糊匹配**：拆成短词（如「Agent 评测」）会命中一堆无关记录，必须用**标题原文连空格一起**才是唯一命中；少一个空格就查不到（`为什么我们需要Agent评测` → count=0），别据此判定记录没建成。
 
+7. **摘要质量门（发回执前必过）**：脚本摘要只是初稿。逐篇自检三问——说得出「是什么 / 怎么做 / 效果多少」吗？有具体数字、版本、条目名吗？清单与多观点稿点到具体条目了吗？任一不过就地重写本地 md 的 `## 摘要` **和**表格 `description`（详见「摘要过薄」一节），再发回执，不要照抄脚本输出。工程长文、访谈、多框架对比这三类最容易只写出「旨在解决 A、B、C 等挑战」而一个数字都没有。
+
 > ⚠️ Wiki 同步已从收集流程中移除，改为每日例行维护任务（21:00）统一批量同步。
 
 ### 单篇入库的交付汇报格式
@@ -497,9 +499,9 @@ python3 scripts/fix_raw_filenames.py --apply    # 执行
 3. 重写三处：`title` 用「中文可读名：一句话定位（开源·语言）」；`source` 用 `owner`；`description` 写「定位 + 2–4 条能力 + 关键设计 + 部署形态/许可证」——**能力条数比形容词有用**，把支持的工具名、协议名、硬数字列出来
 4. 同步本地 md 的 `#` 标题、`**作者**` 与 `## 摘要`，再 `+record-batch-update` 覆盖 title/source/description，回读确认
 
-### 非微信站点（技术博客 / 公司官网）抓不到正文
+### 非微信站点（技术博客 / 公司官网 / 个人站点）抓不到正文
 
-`tech.meituan.com`、`engineering.<company>.com` 这类 JS/SSR 渲染的站点，`collect_v2.py` 只能拿到 `<title>`：结果 JSON 里 `"summary": ""`，本地 md 不足 1KB（`## 正文` 下面空着），但**照样会推送一条只有标题的记录**。
+`tech.meituan.com`、`engineering.<company>.com` 这类 JS/SSR 渲染的站点（个人站点的 `/about` 页同样如此）用 `collect_v2.py` 只能拿到 `<title>`：结果 JSON 里 `"summary": ""`，本地 md 不足 1KB（`## 正文` 下面空着），但**照样会推送一条只有标题的记录**。
 
 **处理（不要重跑脚本，也别开浏览器）**：
 
@@ -507,7 +509,8 @@ python3 scripts/fix_raw_filenames.py --apply    # 执行
 2. 重写本地 md：`#` 标题去掉站点名后缀（如 `| 美团 · 技术团队`），`## 正文` 换成 web_extract 的内容
 3. 按正文重写摘要；**图里的分数不要猜**——正文没给数字就在摘要里写明「具体分数只在图里，正文未给文字数字」
 4. `+record-batch-update` 改那条**已有**记录（title/description/source）并回读。⚠️ 表里没有 `author` 字段，payload 带 `author` 会整条 `ok:false`，作者只写进本地 md 的 `**作者**` 行
-5. 脚本一般已把 URL 交给 IMA；要确认就再调一次 `import_urls` 看 `ret_code`（重复导入无害）
+5. **IMA 那条修不了，也不会自动变好**：IMA 抓的是线上页面、不是本地 md，正文为空时导入的那条在 IMA 里同样是空的；再调一次 `import_urls` 只会在「AI资讯」里**多一条新条目**，旧空条目原地不动。所以先确认正文非空再导；已经导过空条目的，如实告诉用户「IMA 那条可能是空的，重导会多一条」，由用户决定，别悄悄重导。
+6. **文件名跟标题走**：改了 `title` 就同步重命名本地 md（`2026-…_<新标题>.md`）并删掉旧文件——文件名是回执里「本地 md 已存」的唯一线索，名字和表里 title 对不上，下次检索会以为没存。
 
 ### SPA / Web 应用产品页导致摘要为空或无效
 
@@ -570,11 +573,25 @@ python3 scripts/fix_raw_filenames.py --apply    # 执行
 3. 手动重建 markdown 文件（带标准 frontmatter：标题、来源、摘要、正文）
 4. NotebookLM 上传时，中文文件名可能导致失败，需先 `cp` 为 ASCII 文件名再上传
 
-### 登录墙页面（元宝分享链接等）：确认一次就交回用户
+### 元宝分享链接（`yuanbao.tencent.com/chat/...`）：先拆参数，别急着开浏览器
+
+分享链接形如 `…/chat/<id>?from=WeixinAskAi&askAi=<URL 编码的 JSON>&state=yf_wechat_login`。**`askAi` 参数里就带着原文的 `link`**（通常是 `mp.weixin.qq.com/s/...`），解码即得真实文章地址，直接喂 `collect_v2.py` 就能完整入库——不需要登录、不需要扫码。
+
+```python
+from urllib.parse import urlparse, parse_qs, unquote
+import json
+q = parse_qs(urlparse(share_url).query)
+meta = json.loads(unquote(q['askAi'][0]))   # {coverUrl, link, title}
+article = meta['link']                       # 用它入库
+```
+
+**入库后要对账**：用户可能随后又直接发来那条 `mp.weixin.qq.com` 原文链接。先按标题查最近记录（`+record-list --sort-json '[{"field":"updatetime","desc":true}]' --limit 5`），已在表里就只说明「已入库、同一篇」，**不要再跑一遍脚本建重复记录**。
+
+**`askAi` 参数缺失或解析不出 `link` 时**，才按下面的登录墙流程办：
 
 **症状**：`web_extract` 只拿到站点标题与一句副标题（如「元宝-腾讯旗下全能AI助手」），正文为空；用浏览器打开则是一层全屏「微信登录 / 请扫码」遮罩（VOM 里显示 `L1 modal cover=100%`）。
 
-**规则**：`yuanbao.tencent.com/chat/...` 这类分享页需要登录态，**不要换 UA、换引擎、反复重试**（每次都是同一个登录墙，白耗时间）。确认是登录墙后：
+**规则**：需要登录态的分享页，**不要换 UA、换引擎、反复重试**（每次都是同一个登录墙，白耗时间）。确认后：
 
 1. 保留 bsk 会话并停在目标页（`bsk session start --no-focus` → `bsk navigate --session <id> <url>` → `bsk observe` 确认是扫码页），告诉用户「会话已开着」。
 2. 给用户两个选项：**扫码后回一句「已登录」**（我直接读），或**把正文粘贴给我**（走 `collect_v2.py` 之外的补录流程）。
