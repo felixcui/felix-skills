@@ -117,6 +117,19 @@ NEWS_OUTPUT_DIR=...
 
 > **资讯源迁移（2026-11-04）**：抓取服务从 `http://8.130.209.77:8081` 迁到 **`http://59.110.150.199:8081`**。旧 IP 现在直接返回空响应（`curl: (52) Empty reply from server`），脚本会表现为「0 条资讯 / 日报为空」。**排查顺序**：先 `curl -sS -m 10 -o /dev/null -w '%{http_code}' http://59.110.150.199:8081/` 确认服务在，再 `python3 -c "import fetch_ai_news as f; print(len(f.get_raw_news(1)))"` 看抓取条数；`.env` 与脚本内置默认值都指向新地址，换 IP 时两处都要改。
 
+## 取数窗口与采集状态（排查「今天怎么没数据」）
+
+- **`after` / `before` 都是开区间**：`/api/query` 只返回 `after < created < before` 的条目。脚本 `--days 1` 传的是「昨天 → 今天」，所以**只覆盖昨天一整天，今天的文章一条都不含**——早上拿 `--days 1` 探今天，看到的 0 条是窗口问题，不是采集停了。要看今天的量用 `--days 2`，手工探针把 `before` 往后推一天：
+
+```bash
+B=${AI_NEWS_API_BASE%/}
+curl -s "$B/api/query?k=$AI_NEWS_API_KEY&content=0&before=$(date -v+1d +%Y%m%d)&after=$(date -v-1d +%Y%m%d)" -o /tmp/feed.json
+```
+
+- **分清「接口坏」和「采集停」**：HTTP 200 + `err` 为空 + `data` 是数组 = 接口正常（只有缺 `k` 才回 `k param is empty`）。返回 200 但**最新 `created` 停住、当天 0 条、前一天从平常的 150~180 条骤降** = 采集端停更：服务是 Wechat2RSS，公众号登录态过期，需在服务端重新扫码登录，恢复后会把断档的几小时补回来（等几分钟再查，别急着改脚本或换源）。
+- 该服务只有根页面和 `/api/query`，`/health`、`/api/status` 全是 404——**别用它们判健康**，404 不代表服务挂了。
+- 停更当天**不要留空草稿**：日报会产出「暂无AI相关资讯」但脚本照样建草稿，确认当天 0 条就先把草稿删掉，修好采集端再补跑。
+
 ## 发布依赖与故障处理
 
 - 微信发布需要 `baoyu-markdown-to-html` 和 `aicoding-news-weekly/scripts/wechat_api_client.py`。凭证、密钥等敏感信息只放在 `.env`，不要写入文档或提交到版本库。

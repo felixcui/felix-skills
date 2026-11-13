@@ -2,6 +2,24 @@
 
 改动 `fetch_ai_news.py` 的排版或热点提示词后按这两步收尾。**不要重跑 `publish_to_wechat.py --create-draft`**：当天草稿已存在时会多出一份。
 
+## 0. 补跑前先确认当天有没有草稿
+
+采集停更、cron 失败后补跑当天日报，先列草稿再决定跑不跑：
+
+```python
+import os, sys, datetime
+sys.path.insert(0, os.path.expanduser('~/.hermes/skills/felix-skills/skills/aicoding-news-weekly/scripts'))
+from dotenv import load_dotenv; load_dotenv('.env')          # 在 ai-news-fetcher 目录下执行
+from wechat_api_client import WeChatAPIClient               # 类名是 WeChatAPIClient，不是 WeChatClient
+c = WeChatAPIClient()
+r = c._api_call('POST', 'draft/batchget', json={'offset': 0, 'count': 20, 'no_content': 1})
+for it in r.get('item', []):
+    n = it['content']['news_item'][0]
+    print(datetime.datetime.fromtimestamp(it['update_time']).strftime('%m-%d %H:%M'), n['title'], it['media_id'][:16])
+```
+
+判据：列表里**没有** `AI 资讯日报-YYYY.MM.DD`（当天）才跑 `publish_to_wechat.py` 建草稿；已有就走下面的 `draft/update` 原地刷新。补跑完再 `batchget` 一次，确认首条 `update_time` 是今天、标题是当天日期——`publish_to_wechat.py` 的日志刷屏，别只靠它说「✅ 草稿创建成功」。
+
 ## 1. 先验证脚本产物（不要只读代码）
 
 - 热点提示词类改动——import 脚本函数、用真实数据实跑：
