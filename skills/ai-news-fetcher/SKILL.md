@@ -136,6 +136,20 @@ curl -s "$B/api/query?k=$AI_NEWS_API_KEY&content=0&before=$(date -v+1d +%Y%m%d)&
 - 微信封面素材 ID 可能过期。若草稿接口报 `40007 invalid media_id`，重新上传封面后更新发布脚本默认素材 ID，或用 `--cover-image` / `--thumb-media-id` 指定封面。
 - 若微信报 `45166 invalid content hint`，检查资讯标题中的半角 `]` 是否破坏 Markdown 链接，修正后再创建草稿。
 - **模型报 400 / 429 时先探端点，不要改脚本里的模型名**：`.env` 的 `OPENAI_*` 才是分类与热点实际使用的模型（与 Hermes 运行时模型解耦，Hermes 切了模型这里不会自动跟着变）。看到 `HTTP 400 … supported API model names are …` 或 `429 … quota has been exhausted`，用一条最小 `/chat/completions` 请求分别打 `OPENAI_BASE_URL` 和 `DEEPSEEK_BASE_URL`，把 `OPENAI_*` 指到真正回话的端点（模型名与 Hermes 主模型一致；DeepSeek 官方端点接受 `enable_thinking:false`），探针通过后再跑发布脚本。
-- **补跑当天日报前先查两处，别直接重跑**：① `sqlite3 ~/.hermes/cron/executions.db "select scheduled_instant,started_at,status,error from executions where job_id='8935b4b3eda1' order by started_at desc limit 3;"` 拿失败原文（比翻 cron 输出准确）；② `draft/batchget` 确认当天草稿是否已存在——已存在就按 [references/wechat-draft-refresh.md](references/wechat-draft-refresh.md) 用 `draft/update` 原地刷新，重跑 `--create-draft` 会多出一份同标题草稿。
+- **补跑当天日报前先查两处，别直接重跑**：① `sqlite3 ~/.hermes/cron/executions.db "select scheduled_instant,started_at,status,error from executions where job_id='8935b4b3eda1' order by started_at desc limit 3;"` 拿失败原文（比翻 cron 输出准确）；② `draft/batchget` 确认当天草稿是否已存在——已存在就按 [references/wechat-draft-refresh.md](references/wechat-draft-refresh.md) 用 `draft/update` 原地刷新，重跑 `--create-draft` 会多出一份同标题草稿。列草稿用技能目录下的脚本环境（该模块的类名是 **`WeChatAPIClient`**，写成 `WeChatClient` 会 ImportError）：
+
+  ```bash
+  cd ~/.hermes/skills/felix-skills/skills/ai-news-fetcher && python3 - <<'PY'
+  import sys, datetime
+  sys.path.insert(0, '/Users/felix/.hermes/skills/felix-skills/skills/aicoding-news-weekly/scripts')
+  from dotenv import load_dotenv; load_dotenv('.env')
+  from wechat_api_client import WeChatAPIClient
+  r = WeChatAPIClient()._api_call('POST', 'draft/batchget', json={'offset':0,'count':20,'no_content':1})
+  for it in r.get('item', []):
+      print(datetime.datetime.fromtimestamp(it['update_time']).strftime('%m-%d %H:%M'), it['content']['news_item'][0]['title'], it['media_id'][:16])
+  PY
+  ```
+
+  当天标题不在列表里 = 没建过，可以跑；已在 = 走原地刷新。
 - **`48001 api unauthorized`（freepublish / 已发布列表）是预期结果，不要修**：该号未授权群发接口，日报的终点就是微信公众号**草稿箱**，群发由用户在后台手动点；发布脚本天然只建草稿，不要为绕开它改造发布链路。
 - 获取失败时先检查 RSS 服务和网络；AI 分类或热点失败时查看脚本日志中的模型降级信息。
