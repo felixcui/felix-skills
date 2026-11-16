@@ -720,6 +720,38 @@ def _is_thinking_leak(text):
     return False
 
 
+def _strip_markdown_markup(text: str) -> str:
+    """去掉 Markdown 标记，摘要只保留纯文本。
+
+    飞书多维表格 description 与飞书消息都不渲染 Markdown，
+    模型只要输出 **加粗** 就会原样显示星号，所以在源头剥干净。
+    """
+    if not text:
+        return ""
+    s = text
+    # 代码块 / 行内代码
+    s = re.sub(r'```.*?```', '', s, flags=re.S)
+    s = s.replace('`', '')
+    # 图片、链接：保留文字
+    s = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', s)
+    s = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', s)
+    # 标题 / 引用 / 列表符号（行首）
+    s = re.sub(r'(?m)^\s{0,3}#{1,6}\s*', '', s)
+    s = re.sub(r'(?m)^\s{0,3}>\s*', '', s)
+    s = re.sub(r'(?m)^\s{0,3}[-*+]\s+', '', s)
+    s = re.sub(r'(?m)^\s{0,3}\d+[.)]\s+', '', s)
+    # 强调标记：** __ * _ ~~
+    s = re.sub(r'\*{1,3}', '', s)
+    s = re.sub(r'_{2,}', '', s)
+    s = s.replace('~~', '')
+    # 分隔线
+    s = re.sub(r'(?m)^\s*[-*_]{3,}\s*$', '', s)
+    # 残留空白
+    s = re.sub(r'[ \t]{2,}', ' ', s)
+    s = re.sub(r'\n{3,}', '\n\n', s)
+    return s.strip()
+
+
 def _call_llm_for_summary(api_key, base_url, model_name, prompt, max_length):
     """调用 LLM API 生成摘要的通用函数，返回摘要字符串或 None"""
     chat_url = base_url.rstrip("/")
@@ -759,13 +791,15 @@ def _call_llm_for_summary(api_key, base_url, model_name, prompt, max_length):
         summary = re.sub(r'^(摘要|总结)[:：]?\s*', '', summary)
         summary = re.sub(r'\.{3}', '', summary)
         summary = re.sub(r'…', '', summary)
+        # 去掉 Markdown 标记（飞书不渲染，星号会原样露出）
+        summary = _strip_markdown_markup(summary)
 
         # 检测思考泄漏：尝试从分析过程中提取有效摘要
         if _is_thinking_leak(summary):
             extracted = _extract_summary_from_thinking(summary, max_length)
             if extracted:
                 print(f"   ℹ️ LLM 输出包含分析过程，已自动提取摘要 ({len(extracted)}字)")
-                return extracted
+                return _strip_markdown_markup(extracted)
             return None
 
         if len(summary) > 50:
@@ -782,6 +816,7 @@ def generate_summary_with_glm(content, title="", max_length=200):
 
     prompt = f"""请用一段话概括以下文章的核心内容，{max_length}字以内，以句号结尾。
 直接输出摘要正文，禁止输出分析步骤、编号列表或任何元描述。
+只输出纯文本：不要使用任何 Markdown 标记（不要 **加粗**、不要 # 标题、不要 - 或 1. 列表、不要 `代码`、不要表格），也不要分点。
 
 标题：{title}
 
@@ -861,10 +896,10 @@ def generate_summary_with_llm(content, title="", max_length=200, engine="glm"):
     engine: "glm" (默认) | "rule"
     """
     if engine == "rule":
-        return generate_summary_rule_based(content, title, max_length)
+        return _strip_markdown_markup(generate_summary_rule_based(content, title, max_length))
     else:
         # 默认使用 GLM
-        return generate_summary_with_glm(content, title, max_length)
+        return _strip_markdown_markup(generate_summary_with_glm(content, title, max_length))
 
 
 def _clean_content_for_summary(content):

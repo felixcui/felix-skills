@@ -119,6 +119,8 @@ python3 scripts/collect_v2.py <URL> --summary-engine rule
 python3 scripts/collect_v2.py <URL> --summary-length 150
 ```
 
+> **摘要必须是纯文本（2026-11-16 起）**：提示词明确禁止 Markdown，且 `_strip_markdown_markup()` 会在返回前再剥一遍 `**加粗**`、`#`、`- / 1.` 列表、`` `代码` `` 和表格符号。原因：飞书多维表格的 `description` 字段和飞书消息都不渲染 Markdown，带星号会原样显示。改写摘要或手工回填 `description` 时同样不要用 Markdown。
+
 ### 自定义文章保存路径
 
 ```bash
@@ -327,6 +329,7 @@ IMA_API_BASE = "https://ima.qq.com"
 
 ### 标准流程（默认：飞书 + IMA）
 
+0. **按标题查重（必做，先于抓取）**：公众号会把同一篇换个短链重发，`link` 变了 `title` 主体一致（**不是逐字相同**：同篇换号重发时中英文间的空格、全半角标点会被重排，如「AI 数据」↔「AI数据」；比对前先去掉空白与标点再比），而脚本只按 URL 去重。所以先 `+record-list --sort-json '[{"field":"updatetime","desc":true}]' --limit 60` 扫标题，命中就跳过入库、回执写「已入库过、同一篇」。**漏了这步的代价是事后回滚**：删新记录、删重复 md、向用户解释，还要处理 IMA 里删不掉的那条副本。
 1. **抓取内容**
 2. **生成摘要**
 3. **创建 Markdown**
@@ -373,7 +376,7 @@ lark-cli base +record-list --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" \
 
 > ⚠️ **同一事件被多个公众号写，不是重复入库**：不同账号的解读角度不同（一个讲概念、一个讲上手），各入库一条，但回执里点一句「这是该事件的第 N 篇（前一篇是谁家/什么角度）」；只有**标题与正文几乎相同的转载、洗稿**才跳过不入库；**同一作者、同一系统的后续篇（开源、复盘、下篇）不算重复**，各入库一条并在回执写「第 N 篇（前一篇角度是 X）」。跨源去重是日报汇总阶段的动作，入库阶段不做。
 >
-> ⚠️ **跑脚本前先按标题查重——URL 不同不等于新文章**：公众号会把同一篇文章换个短链再发一次（同号重推、或被别的号转载），`link` 变了而 `title` 一字不差。脚本只按 URL 去重，遇到这种会照常入库、产出同标题两条。所以**每次跑 `collect_v2.py` 之前**先 `lark-cli base +record-list --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" --table-id "tblXp6DHjQPomXbv" --as user --sort-json '[{"field":"updatetime","desc":true}]' --limit 60` 按标题扫一遍（刚入过的一定在最近几十条里），命中就跳过入库、回执写「已入库过、同一篇」。
+> ⚠️ **跑脚本前先按标题查重——URL 不同不等于新文章**：公众号会把同一篇文章换个短链再发一次（同号重推、或被别的号转载），`link` 变了而 `title` 主体一致（**不是逐字相同**：同篇换号重发时中英文间的空格、全半角标点会被重排，如「AI 数据」↔「AI数据」；比对前先去掉空白与标点再比）。脚本只按 URL 去重，遇到这种会照常入库、产出同标题两条。所以**每次跑 `collect_v2.py` 之前**先 `lark-cli base +record-list --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" --table-id "tblXp6DHjQPomXbv" --as user --sort-json '[{"field":"updatetime","desc":true}]' --limit 60` 按标题扫一遍（刚入过的一定在最近几十条里），命中就跳过入库、回执写「已入库过、同一篇」。
 >
 > 已经建重了要回滚：**保留摘要更全的那条**（通常是最早入库、后来补写过的那条），删新记录 `lark-cli base +record-delete --base-token <token> --table-id <table> --record-id <recID> --yes --as user`（**flag 是单数 `--record-id`；写成 `--record-ids` 不会删掉，必须删完回读确认该标题只剩 1 条**），再删掉重复的本地 md（按日期前缀 + 标题找，只留一份）。IMA 侧按 URL 导入、无删除接口，同篇重推会在知识库里多一条副本——如实告诉用户「IMA 需手动删一条」，不要声称已清理。
 
