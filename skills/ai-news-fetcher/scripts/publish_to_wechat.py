@@ -208,7 +208,54 @@ class WeChatNewsPublisher:
         wechat_module = _load_module("wechat_api_client", WECHAT_CLIENT_SCRIPT)
         return wechat_module.WeChatAPIClient(appid=self.appid, appsecret=self.appsecret)
     
-    def create_draft(self, html_content: str, cover_image: str = None, thumb_media_id: str = None, date: str = None) -> str:
+    def _extract_hot_digest(self, markdown_content: str, max_len: int = 120) -> str:
+        """从日报 Markdown 的「今日热点」小节生成公众号摘要。
+
+        公众号摘要上限 120 字，且是纯文本：去掉链接、反引号、加粗等标记，
+        多条热点用空格连成一句话；没有热点板块时回退到通用文案。
+        """
+        fallback = "本期汇总了最新的 AI 相关资讯，涵盖编程工具、模型技术、产品应用和行业动态等内容。"
+        if not markdown_content:
+            return fallback
+
+        import re
+        m = re.search(r'###\s*🔥?\s*今日热点\s*\n(.*?)(?=\n###|\Z)', markdown_content, re.S)
+        if not m:
+            return fallback
+
+        items = []
+        for line in m.group(1).splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            line = re.sub(r'^\s*(?:\d+[.、)]|[-*+])\s*', '', line)
+            # 去链接语法、代码符、加粗、行内 HTML
+            line = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', line)
+            line = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', line)
+            line = re.sub(r'<[^>]+>', '', line)
+            line = line.replace('`', '').replace('**', '').replace('__', '')
+            line = line.strip()
+            if line:
+                items.append(line)
+
+        if not items:
+            return fallback
+
+        digest = ' '.join(items)
+        if len(digest) > max_len:
+            cut = digest[:max_len]
+            # 尽量在句末标点处收尾
+            for ch in ('。', '！', '？', '；'):
+                pos = cut.rfind(ch)
+                if pos >= max_len * 0.6:
+                    cut = cut[:pos + 1]
+                    break
+            else:
+                cut = cut.rstrip('，、,;；:：') + '…'
+            digest = cut
+        return digest
+
+    def create_draft(self, html_content: str, cover_image: str = None, thumb_media_id: str = None, date: str = None, digest: str = None) -> str:
         """创建草稿"""
         print(f"📝 正在创建草稿...")
         
@@ -218,7 +265,9 @@ class WeChatNewsPublisher:
             title_date = date.replace('-', '.')
         title = f"AI 资讯日报-{title_date}"
         author = "AI资讯助手"
-        digest = f"本期汇总了最新的 AI 相关资讯，涵盖编程工具、模型技术、产品应用和行业动态等内容。"
+        if not digest:
+            digest = "本期汇总了最新的 AI 相关资讯，涵盖编程工具、模型技术、产品应用和行业动态等内容。"
+        print(f"   摘要: {digest[:60]}{'…' if len(digest) > 60 else ''}")
         content_source_url = ""
         
         try:
@@ -421,8 +470,11 @@ class WeChatNewsPublisher:
         # 转换为 HTML
         html_content = self.convert_to_html(markdown_content)
         
+        # 摘要取「今日热点」
+        digest = self._extract_hot_digest(markdown_content)
+
         # 创建草稿
-        media_id = self.create_draft(html_content, cover_image=cover_image, thumb_media_id=thumb_media_id, date=date)
+        media_id = self.create_draft(html_content, cover_image=cover_image, thumb_media_id=thumb_media_id, date=date, digest=digest)
         
         if create_only:
             print("✅ 仅创建草稿模式，不进行发布")
