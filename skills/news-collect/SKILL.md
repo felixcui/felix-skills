@@ -280,7 +280,7 @@ FEISHU_FIELDS = ["title", "link", "description", "source", "category", "updateti
 
 > **分类是怎么算出来的（2026-10-27 起）**：`classify_article()` 先调**主模型**（skill `.env` 的 `OPENAI_*`，与摘要同源）按「**文章主体是什么、想给读者什么**」判类；模型不可用/输出识别不了时，才降级到加权关键词规则（标题命中 ×3、按分类累加、低于阈值返回「无匹配类别」），日志会打 `⚠️ 主模型判类失败…`。
 >
-> **口径**：判不准**宁可给「无匹配类别」，也不要硬塞 `AI软件工程`**（历史最大偏差来源）。工具上手/玩法教程按**工具所属领域**归（Codex 教程 → AI软件工程；绘本/视频生成 → 内容创作）；Agent 的框架、协议与工具调用、记忆、主动性、多智能体、安全护栏、技能市场 → `Agent基建`；模型自身的发布/训练/评测 → `模型技术`。**职场/组织/人才、融资与资本市场、行业趋势评论 → `其他`**；**访谈、播客整理稿、圆桌、年终复盘、投资人观点这类「评论性稿件」一律归 `其他`**——哪怕通篇在讲 Agent/大模型，也要先问「作者是在描述架构，还是在表达观点」，后者就是 `其他`（这是分类器最高频的误判：看到 Agent 关键词就往 `Agent基建` 塞）；**成品应用**（如销售找人工具、客服 Agent 产品）→ `行业应用`，别因为内部用了 Agent 就归 `Agent基建`；`Agent基建` 只给框架、协议、工具调用、记忆、多智能体这类**基础能力**。**RAG / 检索工程**（切块、索引、召回、重排、Graph RAG 这类系统做法）归 `Agent基建`；只有通篇在讲 embedding 模型本身的训练与选型评测时才归 `模型技术`——两类内容混在一篇时按主体判，别因为出现「embedding 模型」就把整篇挪走（同一批两篇 RAG 稿，分类器一篇给 `Agent基建`、一篇给 `模型技术`，要人工统一）。
+> **口径**：判不准**宁可给「无匹配类别」，也不要硬塞 `AI软件工程`**（历史最大偏差来源）。工具上手/玩法教程按**工具所属领域**归（Codex 教程 → AI软件工程；绘本/视频生成 → 内容创作）；Agent 的框架、协议与工具调用、记忆、主动性、多智能体、安全护栏、技能市场 → `Agent基建`；模型自身的发布/训练/评测 → `模型技术`。**职场/组织/人才、融资与资本市场、行业趋势评论 → `其他`**；**访谈、播客整理稿、圆桌、年终复盘、投资人观点这类「评论性稿件」一律归 `其他`**——哪怕通篇在讲 Agent/大模型，也要先问「作者是在描述架构，还是在表达观点」，后者就是 `其他`（这是分类器最高频的误判：看到 Agent 关键词就往 `Agent基建` 塞）；**成品应用**（如销售找人工具、客服 Agent 产品）→ `行业应用`，别因为内部用了 Agent 就归 `Agent基建`；`Agent基建` 只给框架、协议、工具调用、记忆、多智能体这类**基础能力**。**RAG / 检索工程**（切块、索引、召回、重排、Graph RAG 这类系统做法）归 `Agent基建`；只有通篇在讲 embedding 模型本身的训练与选型评测时才归 `模型技术`——两类内容混在一篇时按主体判，别因为出现「embedding 模型」就把整篇挪走（同一批两篇 RAG 稿，分类器一篇给 `Agent基建`、一篇给 `模型技术`，要人工统一）。**知识资产 / 本体 / 数据研发工程**（把散落材料编译成结构化、可校验的知识库，如 Schema 契约、血缘图、Wiki 编译）归 `AI软件工程`，与上面的「检索链路」分开判：前者在**建知识**，后者在**取知识**。**组织分工、管理机制、职场访谈**（哪怕通篇在讲 Agent 怎么用）归 `其他`。
 >
 > **字段性质现场查，别凭旧结论**：`category` / `tool` 现为**普通 select**（2026-10 已取消 AI 字段 `builtin_llm_completion`，脚本写入不会再被重算覆盖）。改值前仍用 `lark-cli base +field-list --base-token <token> --table-id <table> --as user` 确认是否带 `__has_field_extension`：带 → AI 字段，只能汇报回读值；不带 → 可直接 `+record-batch-update` 修正。
 >
@@ -330,6 +330,12 @@ IMA_API_BASE = "https://ima.qq.com"
 ### 标准流程（默认：飞书 + IMA）
 
 0. **按标题查重（必做，先于抓取）**：公众号会把同一篇换个短链重发，`link` 变了 `title` 主体一致（**不是逐字相同**：同篇换号重发时中英文间的空格、全半角标点会被重排，如「AI 数据」↔「AI数据」；比对前先去掉空白与标点再比），而脚本只按 URL 去重。所以先 `+record-list --sort-json '[{"field":"updatetime","desc":true}]' --limit 60` 扫标题，命中就跳过入库、回执写「已入库过、同一篇」。**漏了这步的代价是事后回滚**：删新记录、删重复 md、向用户解释，还要处理 IMA 里删不掉的那条副本。
+
+> **查重命令怎么选（可靠版）**：`+record-search` 只适合按中文标题片段查——**拉丁缩写（`DSH`、`RAG`）和 URL 常返回 count=0**（分词 + 索引延迟），裸写 `--json` 还会报 `flag needs an argument`（该 flag 必须带值）。所以：
+> - 按标题查：`+record-list --sort-json '[{"field":"updatetime","desc":true}]' --limit 60`，grep 标题片段
+> - 按 URL / 短链查：`+record-list --sort-json '[{"field":"updatetime","desc":true}]' --limit 500 --format ndjson --output ./recs.ndjson --overwrite`，再 `grep "<短链 id>"`——**同一篇换短链重发，只有这一步抓得到**；ndjson 每行带字段名，可直接 `json.loads` 取 `record_id / title / updatetime`
+> - `--limit 2000` 不代表覆盖最新：不给 `--sort-json` 时返回的是最早一批，按 URL 查重必须同时倒序排序
+> - 命中后先核对标题再决定：同标题 + 已在表 = 跳过入库，回执写「已入库过、同一篇」，不重跑脚本
 1. **抓取内容**
 2. **生成摘要**
 3. **创建 Markdown**
@@ -628,7 +634,7 @@ article = meta['link']                       # 用它入库
 2. 标题取 `property="og:title"` 的 content
 3. 正文从 `id="js_content"` 起截一段，`<br>`/`</p>`/`</h*>` 转换行、去标签、`html.unescape` 即得纯文本（一次能出 1 万字以上）
 4. 作者常仍为空（无登录态页面不给 `js_name`）：用正文里的「文｜XXX」「XXX 技术团队」署名行兜底
-5. 后续按「手动构建 Markdown → `+record-batch-create` → IMA import_urls」走，不要新建重复记录
+5. **后续别手写记录**：不要重新拼 `+record-batch-create` 的 `fields/rows`（顺序错了会把摘要塞进 source），而是直接复用 `collect_v2` 的函数串起同一条流水线——`generate_summary_with_llm` → `classify_article` → `create_markdown_content` + `save_raw_markdown` → `push_to_feishu` → `add_to_ima_kb`，字段映射与纯文本清洗都由脚本保证。完整步骤与可复制脚本见 [references/manual-ingest.md](references/manual-ingest.md)。
 
 **备选：浏览器辅助抓取**（curl 也拿不到正文时）
 1. 用 `browser_navigate` 打开文章 URL
@@ -978,7 +984,8 @@ news-collect/
 ├── SKILL.md                    # 技能文档
 ├── references/
 │   ├── ima-maintenance.md       # IMA 知识库每日维护操作手册
-│   └── notebooklm-maintenance.md # NotebookLM 每日维护操作手册
+│   ├── notebooklm-maintenance.md # NotebookLM 每日维护操作手册
+│   └── manual-ingest.md         # 抓取失败时复用 collect_v2 函数的手工入库流程
 └── scripts/
     ├── collect_v2.py            # ⭐ V2 主脚本（增强版）
     ├── eval_classify.py          # 分类回放自检（表内分类 vs 新判定对照）
