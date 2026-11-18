@@ -1,0 +1,1 @@
+{"category":["Agent基建"],"description":"本文以商家AI助手的巡检任务为案例，介绍如何构建业务Benchmark，通过评测器校准与错误分析推动评测体系完善和Agent能力提升，并借助图灵支撑持续回归与模型选型，实现可测、可信、可优化的评测与优化闭环。","link":"https://mp.weixin.qq.com/s/sQrU8O6lj-mYtskuilEDcA","record_id":"reczz28avJwoONbH","source":"美团技术团队","tag":[],"title":"《Agent评测白皮书》业务实践篇：商家 AI 助手的评测与优化闭环实践","tool":[],"updatetime":"2026-11-18T07:18:52.000+08:00"}

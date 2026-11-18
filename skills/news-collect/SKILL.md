@@ -873,7 +873,7 @@ YouTube 视频页面正文有限，`collect_v2.py` 抓取后 GLM 可能生成 0 
 
 > ⚠️ **微信抓取经常丢章节标题**：md 里只剩 `## 01`…`## 07`，甚至整篇只有一个 `## 正文`。**不要靠 headings 判断文章结构**，直接扫正文段落抓「机制名 + 硬数字」；补写后的摘要必须能回答「怎么做的、效果多少」，不能停在「比较了三种方式」这种无信息句。
 
-3. 表格：先拿 recID —— `lark-cli base +record-search --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" --table-id "tblXp6DHjQPomXbv" --keyword "<标题片段>" --search-field title --as user`（没有 `--query` 这个 flag，写了会报 unknown flag）——再覆盖那条记录（不要新建，会变成同标题两条）。**record-search 返回 count=0 不代表没入库**（索引延迟 + 分词匹配），改用 `+record-list --sort-json '[{"field":"updatetime","desc":true}]' --limit 5`，**逐条比对 title、确认就是你要改的那篇再取 recID**；不要因为 search 空就重跑脚本重复入库。
+3. 表格：先拿 recID —— `lark-cli base +record-search --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" --table-id "tblXp6DHjQPomXbv" --keyword "<标题片段>" --search-field title --as user`（没有 `--query` 这个 flag，写了会报 unknown flag）——再覆盖那条记录（不要新建，会变成同标题两条）。**更省事的一条命令：`lark-cli base +record-list --sort-json '[{"field":"updatetime","desc":true}]' --limit 1 > r.txt 2>&1`，然后 `grep -oE 'rec[A-Za-z0-9]{8,}' r.txt | head -1` 取 recID**——同一份输出里就带着标题，先核对标题与本文一致再写；比解析 `--format json` 省事（它的 `data.data` 是二维数组、且长输出会被工具截断成半个 JSON）。**record-search 返回 count=0 不代表没入库**（索引延迟 + 分词匹配），改用 `+record-list --sort-json '[{"field":"updatetime","desc":true}]' --limit 5`，**逐条比对 title、确认就是你要改的那篇再取 recID**；不要因为 search 空就重跑脚本重复入库。
 
 > ⚠️ **绝不能拿「最新一条」当「刚写的那条」**：`--limit 1` 只按 updatetime 排序，刚写入的记录排序可能滞后，取到的往往还是上一篇。用它去 `+record-batch-update` 会**把上一篇的 description 覆盖成本篇内容**（本会话真实发生过，事后要两条都修）。规则：**标题不匹配就不写**；批量更新时用 `update_records` 一次带多个 recID，写完逐条回读 title/description 核对。
 

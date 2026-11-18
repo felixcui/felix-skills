@@ -1,0 +1,115 @@
+{
+  "manifest_version": "v1",
+  "format": "ndjson",
+  "base_token": "Tn1vbRQyraNFvAstbqicUlIJnue",
+  "table_id": "tblXp6DHjQPomXbv",
+  "rev": 14350,
+  "timezone": "Asia/Shanghai",
+  "query_context": {
+    "field_scope": "all_fields",
+    "record_scope": "all_records"
+  },
+  "requested_limit": 1,
+  "records_count": 1,
+  "page_count": 1,
+  "has_more": true,
+  "next_offset": 1,
+  "record_file": "/Users/felix/.hermes/skills/felix-skills/skills/news-collect/tblXp6DHjQPomXbv_20261118_071906_158.ndjson",
+  "record_file_size_bytes": 611,
+  "manifest_file": "/Users/felix/.hermes/skills/felix-skills/skills/news-collect/tblXp6DHjQPomXbv_20261118_071906_158.manifest.json",
+  "columns": {
+    "category": {
+      "field_id": "fldUDCT8wa",
+      "field_type": "select",
+      "physical_type": "array<string>",
+      "stats": {
+        "empty_count": 0,
+        "max_length": 1,
+        "avg_length": 1
+      },
+      "example": [
+        "Agent基建"
+      ]
+    },
+    "description": {
+      "field_id": "fldkumKcnB",
+      "field_type": "text",
+      "physical_type": "string|null",
+      "stats": {
+        "null_count": 0,
+        "max_length": 104
+      },
+      "example": "本文以商家AI助手的巡检任务为案例，介绍如何构建业务Benchmark，通过评测器校准与错误分析推动评测体系完善和Agent能力提升，并借助图灵支撑持续回归与模型选型，实现可测、可信、可优化的评测与优化闭环。"
+    },
+    "link": {
+      "field_id": "fldQQV9krt",
+      "field_type": "text",
+      "physical_type": "string|null",
+      "stats": {
+        "null_count": 0,
+        "max_length": 49
+      },
+      "example": "https://mp.weixin.qq.com/s/sQrU8O6lj-mYtskuilEDcA"
+    },
+    "record_id": {
+      "physical_type": "string",
+      "stats": {
+        "max_length": 16
+      },
+      "example": "reczz28avJwoONbH"
+    },
+    "source": {
+      "field_id": "fldlIBjQqM",
+      "field_type": "text",
+      "physical_type": "string|null",
+      "stats": {
+        "null_count": 0,
+        "max_length": 6
+      },
+      "example": "美团技术团队"
+    },
+    "tag": {
+      "field_id": "fldayoNdnU",
+      "field_type": "select",
+      "physical_type": "array<string>",
+      "stats": {
+        "empty_count": 1,
+        "max_length": 0,
+        "avg_length": 0
+      },
+      "hint": "All values are empty; type inference may be ambiguous. Avoid analyzing this column unless required."
+    },
+    "title": {
+      "field_id": "fldsnokRAE",
+      "field_type": "text",
+      "physical_type": "string|null",
+      "stats": {
+        "null_count": 0,
+        "max_length": 36
+      },
+      "example": "《Agent评测白皮书》业务实践篇：商家 AI 助手的评测与优化闭环实践"
+    },
+    "tool": {
+      "field_id": "fldhYBLxmp",
+      "field_type": "select",
+      "physical_type": "array<string>",
+      "stats": {
+        "empty_count": 1,
+        "max_length": 0,
+        "avg_length": 0
+      },
+      "hint": "All values are empty; type inference may be ambiguous. Avoid analyzing this column unless required."
+    },
+    "updatetime": {
+      "field_id": "fldWZFYn5J",
+      "field_type": "datetime",
+      "physical_type": "string|null",
+      "stats": {
+        "null_count": 0,
+        "min": "2026-11-18T07:18:52.000+08:00",
+        "max": "2026-11-18T07:18:52.000+08:00"
+      },
+      "example": "2026-11-18T07:18:52.000+08:00"
+    }
+  }
+}

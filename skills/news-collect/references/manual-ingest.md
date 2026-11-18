@@ -71,4 +71,5 @@ lark-cli base +record-list --base-token "Tn1vbRQyraNFvAstbqicUlIJnue" \
 - **别用 `execute_code` 跑 `import collect_v2`**：那个解释器没有 `pyyaml`，导入即 `ModuleNotFoundError: No module named 'yaml'`。写成 `.py` 文件用 `terminal` 的系统 `python3` 跑（脚本本身就是按这个解释器写的）。
 - **`add_to_ima_kb()` 成功时返回 `None`**：成功与否看它打印的 `✅ 已添加到 IMA「AI资讯」知识库`，别拿返回值判断。
 - **`+record-search` 查不到拉丁缩写**：`DSH`、`RAG` 这类词常返回 count=0（分词 + 索引延迟），去重要用 `+record-list --sort-json ... --limit 500 --format ndjson --output ./recs.ndjson` 再 `grep` 短链 id。
+- **回填 `description` 时从本地 md 反抽摘要，不要在手写脚本里重新粘贴长文本**：`re.search(r'## 摘要\n\n(.*?)\n\n---', s, re.S)` 取出刚写好的那段再塞进 payload，改一处只有一处真相；重抄一遍容易漏字、被 heredoc 截断，还会出现「md 与表格两版摘要」。
 - **先查重再开工**：公众号常换短链重发，同标题已在表里就只回一句「已入库过、同一篇」，不要重跑整条流水线。
