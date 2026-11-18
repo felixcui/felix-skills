@@ -1105,6 +1105,7 @@ def setup_notebooklm_notebook():
 import time
 
 
+# NotebookLM 已停用（2026-11-18）：以下函数不再被主流程调用，保留仅为历史参考。
 def upload_to_notebooklm(file_path, title, max_retries=3, retry_delay=3):
     """上传本地 Markdown 文件到 NotebookLM（带自动重试）。
 
@@ -1580,11 +1581,9 @@ def save_raw_markdown(title, markdown_content, output_dir=None):
 # ============ 主流程 ============
 
 def main():
-    parser = argparse.ArgumentParser(description='News Collect V2 简化版 - 支持上传到 NotebookLM')
+    parser = argparse.ArgumentParser(description='News Collect V2 - 抓取、摘要、入库（NotebookLM 已停用）')
     parser.add_argument('url', help='文章URL')
     parser.add_argument('--no-push', action='store_true', help='不推送到飞书，仅输出结果')
-    parser.add_argument('--notebook', action='store_true', help='上传到 NotebookLM（默认不上传）')
-    parser.add_argument('--no-notebook', action='store_true', help='不上传到 NotebookLM')
     parser.add_argument('--summary-length', type=int, default=200, help='摘要长度（默认200字）')
     parser.add_argument('--summary-engine', choices=['glm', 'rule'], default='glm', help='摘要引擎：glm(默认) | rule')
     parser.add_argument('--output-dir', help='自定义文章存储目录，支持 ~ 写法。默认: ~/work/github/media-conent/raw')
@@ -1624,22 +1623,10 @@ def main():
     raw_path = save_raw_markdown(data['title'], markdown_content, args.output_dir)
     print(f"✅ 已保存到: {raw_path}")
     
-    # 4. 上传到 NotebookLM（复用本地文件）
-    if args.notebook and not args.no_notebook:
-        print("\n[4/5] 上传到 NotebookLM...")
-        # setup_success = setup_notebooklm_notebook()
-        setup_success = True 
-        
-        if setup_success:
-            upload_success = upload_to_notebooklm(raw_path, raw_path.stem)
-            
-            if not upload_success:
-                print("⚠️ NotebookLM 上传失败，但继续其他操作")
-    
-    # 5. 推送到飞书多维表格
+    # 4. 推送到飞书多维表格
     category = classify_article(data['title'], summary, data.get('content', ''))
     if not args.no_push:
-        print("\n[5/5] 推送到飞书多维表格...")
+        print("\n[4/5] 推送到飞书多维表格...")
         source_name = data.get('source_name', '')
         print(f"   🏷️  分类: {category}")
         success, response = push_to_feishu(
@@ -1658,7 +1645,7 @@ def main():
     
     # 6. 添加到 IMA 知识库（排除 X/Twitter，IMA 无法解析其页面）
     if not args.no_push and IMA_KB_ENABLED and not is_twitter_url(args.url):
-        print("\n[6/6] 添加到 IMA 知识库...")
+        print("\n[5/5] 添加到 IMA 知识库...")
         try:
             add_to_ima_kb(args.url)
         except Exception as e:
@@ -1674,8 +1661,7 @@ def main():
         "author": data.get('author', ''),
         "summary": summary,
         "category": category,
-        "raw_markdown_path": str(raw_path),
-        "notebooklm": args.notebook
+        "raw_markdown_path": str(raw_path)
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
     

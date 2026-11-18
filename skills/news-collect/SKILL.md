@@ -1,21 +1,21 @@
 ---
 name: news-collect
-description: "一站式资讯收集工具 V2：抓取文章 → 生成摘要 → 推送飞书 → 生成多种格式。支持微信公众号、普通网页、Twitter/X，完全自动化处理。NotebookLM 通过 --notebook 参数可选启用。"
+description: "一站式资讯收集工具 V2：抓取文章 → 生成摘要 → 推送飞书 → 入库 IMA。支持微信公众号、普通网页、Twitter/X，完全自动化处理。NotebookLM 已停用。"
 metadata: { "openclaw": { "emoji": "📰", "requires": { "bins": ["python3"] } } }
 ---
 
 # News Collect V2 - 增强版资讯收集工具
 
-一个脚本完成所有操作：抓取文章 → 生成摘要 → 推送飞书 → 上传NotebookLM → 生成多种格式
+一个脚本完成所有操作：抓取文章 → 生成摘要 → 推送飞书 → 入库 IMA
+
+> **NotebookLM 已停用（2026-11-18）**：`--notebook` / `--no-notebook` 参数已从脚本移除，结果 JSON 里不再有 `notebooklm` 字段。下方仍保留的 NotebookLM 章节仅为历史资料，**不要再按它们操作，也不要重新加回参数**。
 
 ## 🆕 V2 新增功能
 
-- ✅ **NotebookLM 深度集成**：自动上传到「AI 资讯」笔记本
-- ✅ **多格式生成**：支持报告、思维导图、PPT、播客、Quiz
+- ✅ **多格式生成**：支持报告、思维导图、PPT、播客、Quiz（历史能力，当前流程不再涉及）
 - ✅ **批量处理**：支持从文件批量处理多个URL
 - ✅ **改进的微信抓取**：使用requests+BeautifulSoup，更稳定
-- ✅ **智能输出控制**：灵活选择推送目标（飞书/NotebookLM/两者）
-- ✅ **默认投递**：在无特殊说明时，默认推送到飞书和 IMA，NotebookLM 需通过 `--notebook` 参数显式启用
+- ✅ **默认投递**：默认推送到飞书和 IMA（NotebookLM 已停用）
 
 ## 功能特点
 
@@ -30,7 +30,7 @@ metadata: { "openclaw": { "emoji": "📰", "requires": { "bins": ["python3"] } }
 
 - Python 3.6+
 - Hermes 配置文件中有 GLM API key（`~/.hermes/config.yaml`，默认摘要引擎自动读取）
-- NotebookLM CLI（Python 3.14 版本，可选）
+- ~~NotebookLM CLI~~（已停用，无需安装）
 - requests、beautifulsoup4、pyyaml 库
 
 安装依赖：
@@ -46,17 +46,11 @@ pip3 install requests beautifulsoup4 pyyaml
 python3 scripts/collect_v2.py <文章URL>
 ```
 
-> 默认情况下，脚本会将结果推送到飞书和 IMA，不上传 NotebookLM。如需上传 NotebookLM，请加 `--notebook` 参数。
+> 默认情况下，脚本会将结果推送到飞书和 IMA。NotebookLM 已停用，没有对应开关。
 
 示例：
 ```bash
 python3 scripts/collect_v2.py "https://mp.weixin.qq.com/s/nhzMNSc_-TQefSLz9Gb08A"
-```
-
-### 上传到 NotebookLM
-
-```bash
-python3 scripts/collect_v2.py <URL> --notebook
 ```
 
 ### 生成 NotebookLM 格式
@@ -161,7 +155,8 @@ python3 scripts/collect_v2.py <URL> --output-dir ~/Desktop/my_news
   "title": "🦞 写作、排版、发布一条龙...",
   "author": "AI工具进化论",
   "summary": "作者分享了使用OpenClaw+Claude Code+wenyan-cli搭建全自动化公众号写作系统的经验...",
-  "notebooklm": false
+  "category": "Agent基建",
+  "raw_markdown_path": "/Users/felix/work/github/media-conent/raw/2026-11-18_xxx.md"
 }
 
 ✨ 完成!
@@ -310,22 +305,19 @@ IMA_API_BASE = "https://ima.qq.com"
 | `--no-push` | 不推送到飞书多维表格，仅输出结果 | False |
 | `--summary-length` | 摘要最大长度 | 200 |
 | `--summary-engine` | 摘要引擎：glm(默认) / rule | glm |
-| `--notebook` | 上传到 NotebookLM（默认不上传） | False |
-| `--format` | NotebookLM 生成格式 | - |
 | `--batch` | 批量处理URL文件 | - |
+| ~~`--notebook`~~ | **已移除**（NotebookLM 停用） | - |
+| ~~`--format`~~ | **已移除**（NotebookLM 停用） | - |
 
 ## 工作流程
 
-### 完整流程（NotebookLM 模式）
+### 完整流程
 
 1. **抓取内容** - 自动识别来源类型并抓取
 2. **生成摘要** - 默认使用 GLM API，支持 `--summary-engine` 切换
 3. **创建 Markdown** - 标准化格式
-4. **上传 NotebookLM** - 自动创建「AI 资讯」笔记本并上传
-5. **生成格式** - 根据参数生成报告/思维导图/PPT/播客/Quiz
-6. **下载文件** - 下载生成的文件到 `/tmp/news-collect_output`
-7. **推送飞书** - 推送摘要到飞书 webhook
-8. **添加 IMA** - 添加文章 URL 到 IMA 知识库（所有公网 URL 均尝试）
+4. **推送飞书** - 写入多维表格
+5. **添加 IMA** - 添加文章 URL 到 IMA 知识库（所有公网 URL 均尝试）
 
 ### 标准流程（默认：飞书 + IMA）
 
