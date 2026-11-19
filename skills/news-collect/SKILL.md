@@ -24,7 +24,7 @@ metadata: { "openclaw": { "emoji": "📰", "requires": { "bins": ["python3"] } }
 - ✅ **支持多源**：微信公众号、普通网页、Twitter/X 自动识别
 - ✅ **自动降级**：LLM 不可用时自动使用规则生成摘要
 - ✅ **自动推送**：支持飞书 webhook 推送
-- ✅ **NotebookLM 集成**：直接上传并生成多种格式
+- ❌ **NotebookLM 集成已移除**（2026-11-18）
 
 ## 前置要求
 
@@ -53,24 +53,9 @@ python3 scripts/collect_v2.py <文章URL>
 python3 scripts/collect_v2.py "https://mp.weixin.qq.com/s/nhzMNSc_-TQefSLz9Gb08A"
 ```
 
-### 生成 NotebookLM 格式
+### ~~生成 NotebookLM 格式~~（已停用）
 
-```bash
-# 生成报告
-python3 scripts/collect_v2.py <URL> --notebook --format report
-
-# 生成思维导图
-python3 scripts/collect_v2.py <URL> --notebook --format mind-map
-
-# 生成 PPT
-python3 scripts/collect_v2.py <URL> --notebook --format slide-deck
-
-# 生成播客
-python3 scripts/collect_v2.py <URL> --notebook --format audio
-
-# 生成 Quiz
-python3 scripts/collect_v2.py <URL> --notebook --format quiz
-```
+`--notebook` / `--format` 已从脚本移除，这些命令现在会直接报 `unrecognized arguments`，**不要照抄**。
 
 ### 批量处理
 
@@ -83,11 +68,15 @@ echo "https://example.com/article2" >> urls.txt
 python3 scripts/collect_v2.py --batch urls.txt
 ```
 
-### 仅抓取不推送
+### 仅抓取不推送（改脚本后的冒烟测试也走这条）
 
 ```bash
 python3 scripts/collect_v2.py <URL> --no-push
 ```
+
+> ⚠️ **冒烟测试会留下副本 md**：同名文章已存在时 `save_raw_markdown()` 会自动加 `_2` 后缀，跑完 `raw/` 里就多一份没有入库记录的孤儿文件。验证完立刻删掉它（按刚输出的 `raw_markdown_path` 精确删除），否则下次按标题找文件会挑错版本。
+>
+> 想验证改动流程，用**已经入过库的 URL** 跑 `--no-push`：不写表、不导 IMA，只走抓取→摘要→本地 md，足够暴露参数/步骤改动的问题。
 
 ### 自定义 webhook
 
@@ -226,6 +215,8 @@ python3 scripts/collect_v2.py <URL> --output-dir ~/Desktop/my_news
 | 微信视频号（`weixin.qq.com/sph/…`） | ⚠️ 半支持 | 作者、帖子文案；**标题拿不到** | — | ✅ |
 
 > ⚠️ IMA 无法解析 X/Twitter 页面（返回 ret_code 220001），Twitter 相关 URL 已自动跳过 IMA 导入。
+>
+> ⚠️ **表里的 NotebookLM 列已作废**（2026-11-18 停用），只剩 IMA 一列有意义。
 >
 > ⚠️ **视频号链接是分享短链，不是文章**：抓回来 `title` 就是「视频号」两个字，正文 = 帖子文案（带话题标签、日期、点赞数）。入库后**必须换标题**，否则表里会攒一堆叫「视频号」的行——用文案里的产品/事件名起一个能自解释的标题并加「（<号名> 视频号）」，本地 md 的 `#` 标题与表格 `title` 同时改（`+record-batch-update` 覆盖 title，回读确认）。
 
@@ -515,11 +506,13 @@ python3 scripts/fix_raw_filenames.py --apply    # 执行
 **处理（不要重跑脚本，也别开浏览器）**：
 
 1. `web_extract([url], char_limit=80000)` 取 markdown 正文——这类站点通常能完整取回，比浏览器快且不占会话
-2. 重写本地 md：`#` 标题去掉站点名后缀（如 `| 美团 · 技术团队`），`## 正文` 换成 web_extract 的内容
-3. 按正文重写摘要；**图里的分数不要猜**——正文没给数字就在摘要里写明「具体分数只在图里，正文未给文字数字」
-4. `+record-batch-update` 改那条**已有**记录（title/description/source）并回读。⚠️ 表里没有 `author` 字段，payload 带 `author` 会整条 `ok:false`，作者只写进本地 md 的 `**作者**` 行
-5. **IMA 那条修不了，也不会自动变好**：IMA 抓的是线上页面、不是本地 md，正文为空时导入的那条在 IMA 里同样是空的；再调一次 `import_urls` 只会在「AI资讯」里**多一条新条目**，旧空条目原地不动。所以先确认正文非空再导；已经导过空条目的，如实告诉用户「IMA 那条可能是空的，重导会多一条」，由用户决定，别悄悄重导。
-6. **文件名跟标题走**：改了 `title` 就同步重命名本地 md（`2026-…_<新标题>.md`）并删掉旧文件——文件名是回执里「本地 md 已存」的唯一线索，名字和表里 title 对不上，下次检索会以为没存。
+2. **web_extract 也只拿到壳时（正文只剩站点名、课程/产品导航、页脚），改走浏览器渲染**：`browser_exec` 里 `new_tab(url)` → `wait_for_load()` → 等 2~3 秒 → `js("document.body.innerText")` 取渲染后的正文。datawhale.cn 这类前端路由站点（`/learn/summary/<id>`）就是如此：抓取器和 web_extract 都只回「Datawhale-课程摘要 / 课程来源 / 暂无评分」几个字段。渲染后要**从头重建 md**（标题、摘要、正文全部重写），空壳 md 直接删掉
+3. 这类页面抓取器给的 `title` 是站点名（如「Datawhale-学用 AI,从此开始」）、`summary` 为空、`category` 是「无匹配类别」、`source` 为空——**四个字段都要改**，不是只补摘要；标题改成页面里的真实内容名（课程名 / 产品名 + 一句定位）
+4. 重写本地 md：`#` 标题去掉站点名后缀（如 `| 美团 · 技术团队`），`## 正文` 换成 web_extract 的内容
+5. 按正文重写摘要；**图里的分数不要猜**——正文没给数字就在摘要里写明「具体分数只在图里，正文未给文字数字」
+6. `+record-batch-update` 改那条**已有**记录（title/description/source）并回读。⚠️ 表里没有 `author` 字段，payload 带 `author` 会整条 `ok:false`，作者只写进本地 md 的 `**作者**` 行
+7. **IMA 那条修不了，也不会自动变好**：IMA 抓的是线上页面、不是本地 md，正文为空时导入的那条在 IMA 里同样是空的；再调一次 `import_urls` 只会在「AI资讯」里**多一条新条目**，旧空条目原地不动。所以先确认正文非空再导；已经导过空条目的，如实告诉用户「IMA 那条可能是空的，重导会多一条」，由用户决定，别悄悄重导。
+8. **文件名跟标题走**：改了 `title` 就同步重命名本地 md（`2026-…_<新标题>.md`）并删掉旧文件——文件名是回执里「本地 md 已存」的唯一线索，名字和表里 title 对不上，下次检索会以为没存。
 
 ### SPA / Web 应用产品页导致摘要为空或无效
 
@@ -989,6 +982,10 @@ news-collect/
 ## 更新日志
 
 > ⚠️ **维护本文件的规矩**：某条历史结论与**现场取证**冲突时（尤其是「不可能 / 别改 / 一定是 X」这类断言），**就地改掉那句话并注明旧结论作废**，不要在下面追加「UPDATE: 其实……」。留在原位的旧结论会继续误导下一次会话——本文件里「category 是飞书 AI 字段、别动分类器」就是这种留下的错话，害得后续会话把真判错误归因成飞书重算。
+
+### v2.7 (2026-11-18)
+- 🔧 **停用 NotebookLM**：移除 `--notebook` / `--no-notebook` / `--format` 三个参数、主流程上传步骤、结果 JSON 的 `notebooklm` 字段；步骤编号回到 1/5 → 5/5。`upload_to_notebooklm()` 保留但标注停用、不再被调用。本文件里 NotebookLM 章节一律视为历史资料。
+- 🔧 脚本改动的冒烟测试统一用 `--no-push` + 已入库 URL，跑完删掉生成的 `_2.md` 副本。
 
 ### v2.6 (2026-10-27)
 - 🔧 **分类改为「主模型优先、规则兜底」**：`classify_article()` 先调主模型（`news-collect/.env` 的 `OPENAI_*`，与摘要同源）按「文章主体是什么、想给读者什么」从 10 个固定选项里选一个；模型不可用、超时或输出识别不了（`_match_category` 对不齐选项）才降级到加权关键词规则。
